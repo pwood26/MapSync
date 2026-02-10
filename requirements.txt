@@ -4,3 +4,4 @@ numpy>=1.24
 opencv-python-headless>=4.8
 requests>=2.31
 gunicorn>=21.2.0
+anthropic>=0.40.0

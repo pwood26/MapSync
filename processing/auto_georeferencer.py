@@ -1,5 +1,5 @@
 from processing.tile_downloader import download_reference_image
-from processing.feature_matcher import auto_match
+from processing.vision_matcher import auto_match
 
 MAX_SPAN = 0.5    # degrees – reject bounding boxes larger than ~50 km
 MIN_SPAN = 0.001  # degrees – reject bounding boxes smaller than ~100 m
