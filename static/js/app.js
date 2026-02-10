@@ -59,7 +59,19 @@ function handleFileUpload(e) {
         body: formData,
     })
         .then(function (resp) {
-            if (!resp.ok) return resp.json().then(function (d) { throw new Error(d.error); });
+            if (!resp.ok) {
+                return resp.text().then(function (text) {
+                    try {
+                        var d = JSON.parse(text);
+                        throw new Error(d.error || 'Upload failed');
+                    } catch (e) {
+                        if (e instanceof SyntaxError) {
+                            throw new Error('Server error (' + resp.status + '). Check server logs.');
+                        }
+                        throw e;
+                    }
+                });
+            }
             return resp.json();
         })
         .then(function (data) {

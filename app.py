@@ -26,6 +26,17 @@ for folder in [UPLOAD_FOLDER, PREVIEW_FOLDER, EXPORT_FOLDER, OVERLAY_FOLDER, TEM
     os.makedirs(folder, exist_ok=True)
 
 
+# Global error handlers — always return JSON, never HTML
+@app.errorhandler(500)
+def internal_error(e):
+    return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+
+
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({'error': 'File too large (max 500 MB)'}), 413
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -98,10 +109,27 @@ def upload():
 
     # Generate preview
     preview_path = os.path.join(PREVIEW_FOLDER, f'{image_id}.png')
-    preview_info = convert_to_preview(tiff_path, preview_path)
+    try:
+        preview_info = convert_to_preview(tiff_path, preview_path)
+    except Exception as e:
+        os.remove(tiff_path)
+        return jsonify({'error': f'Failed to generate preview: {str(e)}'}), 500
 
     # Extract metadata for potential auto-georeferencing
-    metadata = extract_metadata(tiff_path)
+    try:
+        metadata = extract_metadata(tiff_path)
+    except Exception as e:
+        # Metadata extraction is non-critical — proceed without it
+        metadata = {
+            'has_georeference': False,
+            'has_gps': False,
+            'has_usgs_metadata': False,
+            'center_lat': None,
+            'center_lon': None,
+            'corners': None,
+            'gsd': None,
+            'source': None,
+        }
 
     return jsonify({
         'image_id': image_id,

@@ -6,15 +6,45 @@ This guide explains how to use USGS aerial imagery download packages with MapSyn
 
 ## 📦 USGS Download Package Format
 
-When you download aerial imagery from USGS EarthExplorer, you receive a ZIP file containing:
+When you download aerial imagery from USGS EarthExplorer **with all options selected**, you receive a ZIP file containing:
 
 ```
 AR1131860010276.zip/
 ├── AR1131860010276.tif              # The aerial photograph
-├── AR1131860010276.tfw              # World file for georeferencing
-├── AR1131860010276_footprint.geojson # Spatial footprint boundary
+├── AR1131860010276.tfw              # World file for georeferencing ← REQUIRED!
+├── AR1131860010276_footprint.geojson # Spatial footprint boundary ← OPTIONAL
 └── README.txt                        # Usage instructions
 ```
+
+⚠️ **IMPORTANT:** The `.tfw` world file and `_footprint.geojson` files are **NOT included by default**! You must select additional download options on USGS EarthExplorer (see instructions below).
+
+---
+
+## 📥 How to Download from USGS EarthExplorer (With Metadata Files)
+
+### **Step-by-Step Download Instructions:**
+
+1. **Go to** [USGS EarthExplorer](https://earthexplorer.usgs.gov/)
+2. **Search** for your aerial imagery location
+3. **Select** the aerial photo you want from search results
+4. **Click "Download Options"** (🔽 icon)
+5. **⚠️ CRITICAL:** Check **BOTH** of these boxes:
+   - ☑️ **GeoTIFF** (the main image file)
+   - ☑️ **World File (.tfw)** ← **MUST select this for auto-georeferencing!**
+   - ☑️ **Metadata** (optional - GeoJSON footprint)
+6. **Download** the ZIP package
+7. **Upload ZIP directly to MapSync** (don't extract it!)
+
+### **If You Already Downloaded Without World File:**
+
+Your ZIP probably only contains:
+```
+AR1131860010276.zip/
+├── AR1131860010276.tif    ← Only the image
+└── README.txt
+```
+
+**Solution:** Go back to EarthExplorer and re-download with the **World File** option checked!
 
 ---
 

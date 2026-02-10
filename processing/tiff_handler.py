@@ -35,7 +35,11 @@ def convert_to_preview(tiff_path, preview_path, max_dim=PREVIEW_MAX_DIM):
 
         # Convert to RGB if necessary (some TIFFs are 16-bit or have extra channels)
         if img.mode not in ('RGB', 'RGBA'):
-            img = img.convert('RGB')
+            try:
+                img = img.convert('RGB')
+            except Exception:
+                # Fallback for exotic modes (e.g., I;16, CMYK, palette): convert via grayscale
+                img = img.convert('L').convert('RGB')
 
         # Compute resize dimensions
         if max(orig_w, orig_h) > max_dim:
@@ -102,8 +106,11 @@ def extract_metadata(tiff_path):
     # Try world file (.tfw) - USGS download package
     from processing.worldfile_parser import try_extract_from_worldfile
     # Get image dimensions for world file parsing
-    with Image.open(tiff_path) as img:
-        width, height = img.size
+    try:
+        with Image.open(tiff_path) as img:
+            width, height = img.size
+    except Exception:
+        width, height = 4000, 4000  # fallback dimensions
 
     worldfile_meta = try_extract_from_worldfile(tiff_path, width, height)
     if worldfile_meta:
