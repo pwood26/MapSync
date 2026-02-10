@@ -1,5 +1,8 @@
 [phases.setup]
-nixPkgs = ["gdal"]
+nixPkgs = ["python3", "gdal", "python3Packages.pip"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
 
 [start]
 cmd = "gunicorn --bind 0.0.0.0:$PORT app:app"
