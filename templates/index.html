@@ -89,6 +89,11 @@
                 </div>
             </div>
             <div id="map-viewer" class="viewer-container"></div>
+            <!-- Map-pane loading overlay (non-blocking for aerial pane) -->
+            <div id="mapLoadingOverlay" class="map-loading-overlay" style="display: none;">
+                <div class="spinner"></div>
+                <p id="mapLoadingText">Processing...</p>
+            </div>
             <!-- Overlay list panel (floats over map) -->
             <div id="overlayPanel" class="overlay-panel" style="display: none;">
                 <div class="overlay-panel-header">

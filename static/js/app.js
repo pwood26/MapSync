@@ -215,6 +215,18 @@ function hideLoading() {
     if (overlay) overlay.style.display = 'none';
 }
 
+function showMapLoading(text) {
+    var loadingText = document.getElementById('mapLoadingText');
+    var overlay = document.getElementById('mapLoadingOverlay');
+    if (loadingText) loadingText.textContent = text || 'Processing...';
+    if (overlay) overlay.style.display = 'flex';
+}
+
+function hideMapLoading() {
+    var overlay = document.getElementById('mapLoadingOverlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
 function displayMetadataInfo(metadata) {
     var infoDiv = document.getElementById('metadataInfo');
     if (!infoDiv) return;

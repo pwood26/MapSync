@@ -10,6 +10,7 @@ import os
 import tempfile
 import zipfile
 
+import numpy as np
 from PIL import Image
 
 # Allow large images
@@ -34,14 +35,18 @@ def generate_kmz(georef_tiff, kmz_path):
         if not bounds:
             return {'error': 'Could not find geographic bounds for the georeferenced image.'}
 
-        # Step 2: Convert TIFF to JPEG using Pillow
+        # Step 2: Convert TIFF to JPEG, removing borders
         fd, jpeg_path = tempfile.mkstemp(suffix='.jpg')
         os.close(fd)
 
         try:
-            _tiff_to_jpeg(georef_tiff, jpeg_path)
+            crop_box = _tiff_to_jpeg(georef_tiff, jpeg_path)
         except Exception as e:
             return {'error': f'JPEG conversion failed: {e}'}
+
+        # Step 2b: Adjust bounds if border was cropped
+        if crop_box is not None:
+            bounds = _adjust_bounds_for_crop(bounds, crop_box)
 
         # Step 3: Build KML
         kml_content = build_kml(bounds)
@@ -81,8 +86,14 @@ def _read_bounds(georef_tiff):
 
 
 def _tiff_to_jpeg(tiff_path, jpeg_path, quality=85):
-    """Convert a TIFF to JPEG using Pillow."""
+    """Convert a TIFF to JPEG, removing black borders and logo areas.
+
+    Returns a crop_box tuple (left, top, right, bottom) as fractions
+    of the original dimensions if cropping occurred, or None if no
+    cropping was needed.
+    """
     img = Image.open(tiff_path)
+    orig_w, orig_h = img.size
 
     # Handle various modes
     if img.mode == 'RGBA':
@@ -96,7 +107,87 @@ def _tiff_to_jpeg(tiff_path, jpeg_path, quality=85):
         except Exception:
             img = img.convert('L').convert('RGB')
 
+    # Detect and remove borders
+    crop_box = _find_content_bounds(img)
+    if crop_box is not None:
+        left, top, right, bottom = crop_box
+        img = img.crop((left, top, right, bottom))
+        # Convert to fractional box for bounds adjustment
+        crop_box = (left / orig_w, top / orig_h, right / orig_w, bottom / orig_h)
+
     img.save(jpeg_path, 'JPEG', quality=quality)
+    return crop_box
+
+
+def _find_content_bounds(img):
+    """Find the bounding box of actual map content, excluding borders.
+
+    Detects black borders (from warping fill), white/grey borders
+    (from scanning), and USGS logo bars. Returns (left, top, right, bottom)
+    pixel coordinates, or None if no significant border detected.
+    """
+    arr = np.array(img)
+    h, w = arr.shape[:2]
+
+    # A pixel is "border" if it's very dark (black fill from warp)
+    # or very bright and uniform (white scanning border / logo bar)
+    grey = np.mean(arr, axis=2)
+
+    # Content pixels are neither near-black nor near-white
+    dark_thresh = 15
+    bright_thresh = 245
+    content_mask = (grey > dark_thresh) & (grey < bright_thresh)
+
+    # Find rows and columns that have enough content pixels
+    min_content_fraction = 0.05  # At least 5% of the row/col must be content
+
+    row_content = np.mean(content_mask, axis=1)
+    col_content = np.mean(content_mask, axis=0)
+
+    content_rows = np.where(row_content > min_content_fraction)[0]
+    content_cols = np.where(col_content > min_content_fraction)[0]
+
+    if len(content_rows) == 0 or len(content_cols) == 0:
+        return None
+
+    top = int(content_rows[0])
+    bottom = int(content_rows[-1]) + 1
+    left = int(content_cols[0])
+    right = int(content_cols[-1]) + 1
+
+    # Only crop if we're removing a meaningful border (>1% on any side)
+    margin = 0.01
+    if (top < h * margin and bottom > h * (1 - margin) and
+            left < w * margin and right > w * (1 - margin)):
+        return None
+
+    # Add a small padding (2px) to avoid cutting into content
+    pad = 2
+    top = max(0, top - pad)
+    bottom = min(h, bottom + pad)
+    left = max(0, left - pad)
+    right = min(w, right + pad)
+
+    return (left, top, right, bottom)
+
+
+def _adjust_bounds_for_crop(bounds, crop_frac):
+    """Adjust geographic bounds after cropping the image.
+
+    crop_frac is (left, top, right, bottom) as fractions [0..1]
+    of the original image dimensions.
+    """
+    frac_left, frac_top, frac_right, frac_bottom = crop_frac
+
+    lon_span = bounds['east'] - bounds['west']
+    lat_span = bounds['north'] - bounds['south']
+
+    return {
+        'west': bounds['west'] + frac_left * lon_span,
+        'east': bounds['west'] + frac_right * lon_span,
+        'north': bounds['north'] - frac_top * lat_span,
+        'south': bounds['north'] - frac_bottom * lat_span,
+    }
 
 
 def build_kml(bounds):

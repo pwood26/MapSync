@@ -166,7 +166,11 @@ function cancelBboxDrawing() {
 // ============================================================
 
 function runAutoGeoreferenceWithMetadata() {
-    showLoading('Using metadata location to guide AI feature matching...');
+    // Hide the metadata bar immediately — its hint is no longer relevant
+    var metaInfo = document.getElementById('metadataInfo');
+    if (metaInfo) metaInfo.style.display = 'none';
+
+    showMapLoading('Using metadata location to guide AI feature matching...');
 
     fetch('/api/auto-georeference', {
         method: 'POST',
@@ -186,7 +190,7 @@ function runAutoGeoreferenceWithMetadata() {
         })
         .then(function (data) {
             populateGcpsFromAutoResult(data);
-            hideLoading();
+            hideMapLoading();
 
             var confidence = Math.round(data.confidence * 100);
             var statusMsg = 'AI auto-detected ' + data.gcps.length + ' control points ';
@@ -200,12 +204,7 @@ function runAutoGeoreferenceWithMetadata() {
             updateGcpStatus(statusMsg);
         })
         .catch(function (err) {
-            hideLoading();
-
-            // Hide the metadata info bar — its "Click Auto-Georeference" hint
-            // is no longer relevant since auto-georef failed
-            var metaInfo = document.getElementById('metadataInfo');
-            if (metaInfo) metaInfo.style.display = 'none';
+            hideMapLoading();
 
             // If metadata-guided matching fails, offer manual bounding box
             if (confirm('Automatic georeferencing failed:\n\n' + err.message + '\n\nWould you like to manually draw a bounding box for AI matching?')) {
@@ -217,7 +216,7 @@ function runAutoGeoreferenceWithMetadata() {
 }
 
 function runAutoGeoreference() {
-    showLoading('Downloading satellite imagery and matching features...');
+    showMapLoading('Downloading satellite imagery and matching features...');
 
     fetch('/api/auto-georeference', {
         method: 'POST',
@@ -238,7 +237,7 @@ function runAutoGeoreference() {
         })
         .then(function (data) {
             populateGcpsFromAutoResult(data);
-            hideLoading();
+            hideMapLoading();
 
             // Remove the bounding box rectangle
             if (AutoGeoref.rect) {
@@ -255,7 +254,7 @@ function runAutoGeoreference() {
             );
         })
         .catch(function (err) {
-            hideLoading();
+            hideMapLoading();
 
             // Remove the bounding box rectangle on error too
             if (AutoGeoref.rect) {

@@ -544,6 +544,26 @@ body {
     font-size: 14px;
 }
 
+/* Map-pane loading overlay (keeps aerial pane interactive) */
+.map-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 900;
+}
+
+.map-loading-overlay p {
+    color: #e0e0e0;
+    font-size: 14px;
+}
+
 /* Leaflet overrides */
 .leaflet-container {
     background: #111;
