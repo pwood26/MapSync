@@ -17,7 +17,7 @@ from PIL import Image
 Image.MAX_IMAGE_PIXELS = 500_000_000
 
 
-def generate_kmz(georef_tiff, kmz_path):
+def generate_kmz(georef_tiff, kmz_path, rotation=0):
     """Generate a KMZ file from a georeferenced TIFF.
 
     The KMZ contains a KML ground overlay and a JPEG image,
@@ -25,6 +25,11 @@ def generate_kmz(georef_tiff, kmz_path):
 
     Reads geographic bounds from a sidecar JSON file
     ({image_id}_georef_bounds.json) saved by the georeferencer.
+
+    Args:
+        georef_tiff: Path to the georeferenced TIFF.
+        kmz_path: Output path for the KMZ file.
+        rotation: Optional rotation in degrees for KML LatLonBox.
 
     Returns:
         Dict with 'success' and 'bounds', or 'error'.
@@ -48,8 +53,8 @@ def generate_kmz(georef_tiff, kmz_path):
         if crop_box is not None:
             bounds = _adjust_bounds_for_crop(bounds, crop_box)
 
-        # Step 3: Build KML
-        kml_content = build_kml(bounds)
+        # Step 3: Build KML (with optional rotation)
+        kml_content = build_kml(bounds, rotation=rotation)
 
         # Step 4: Package into KMZ (ZIP containing doc.kml + overlay.jpg)
         with zipfile.ZipFile(kmz_path, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -190,8 +195,13 @@ def _adjust_bounds_for_crop(bounds, crop_frac):
     }
 
 
-def build_kml(bounds):
-    """Build KML XML for a ground overlay."""
+def build_kml(bounds, rotation=0):
+    """Build KML XML for a ground overlay.
+
+    Args:
+        bounds: Dict with north, south, east, west.
+        rotation: Rotation angle in degrees (counter-clockwise).
+    """
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
@@ -206,7 +216,7 @@ def build_kml(bounds):
         <south>{bounds['south']}</south>
         <east>{bounds['east']}</east>
         <west>{bounds['west']}</west>
-        <rotation>0</rotation>
+        <rotation>{rotation}</rotation>
       </LatLonBox>
     </GroundOverlay>
   </Document>

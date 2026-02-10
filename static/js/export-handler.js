@@ -38,11 +38,12 @@ function handleExport() {
         .then(function (result) {
             hideLoading();
             AppState.isGeoreferenced = true;
+            AppState.lastGeorefBounds = result.bounds;
 
             // Update error column in GCP table
             updateGcpErrors(result.residuals);
 
-            // Show results modal
+            // Show results modal with Preview & Adjust option
             showResultsModal(result);
         })
         .catch(function (err) {
@@ -81,6 +82,7 @@ function showResultsModal(result) {
         '  </p>' +
         '  <div class="actions">' +
         '    <button class="btn-secondary" id="resultsClose">Close</button>' +
+        '    <button class="btn-adjust" id="resultsPreview">Preview & Adjust</button>' +
         '    <button class="btn-primary" id="resultsDownload">Download KMZ</button>' +
         '  </div>' +
         '</div>';
@@ -89,6 +91,17 @@ function showResultsModal(result) {
 
     document.getElementById('resultsClose').addEventListener('click', function () {
         document.body.removeChild(overlay);
+    });
+
+    document.getElementById('resultsPreview').addEventListener('click', function () {
+        document.body.removeChild(overlay);
+        // Show the georeferenced image on the map for adjustment
+        if (result.bounds) {
+            showPreviewOverlay(AppState.imageId, result.bounds);
+            updateGcpStatus('Preview & Adjust: drag the image or use controls to fine-tune, then click Accept to export.');
+        } else {
+            alert('No bounds available from georeferencing.');
+        }
     });
 
     document.getElementById('resultsDownload').addEventListener('click', function () {

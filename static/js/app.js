@@ -17,6 +17,7 @@ var AppState = {
     aerialOverlays: [],
     mapMarkers: [],
     isGeoreferenced: false,
+    lastGeorefBounds: null,
     vectorOverlays: [],
 };
 

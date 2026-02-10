@@ -300,6 +300,47 @@ def georeference():
     return jsonify(result)
 
 
+@app.route('/api/preview-overlay/<image_id>')
+def preview_overlay(image_id):
+    """Serve the georeferenced image as a JPEG for Leaflet overlay preview.
+
+    Also returns the bounds as JSON if requested with ?bounds=1.
+    """
+    georef_path = os.path.join(EXPORT_FOLDER, f'{image_id}_georef.tiff')
+    if not os.path.exists(georef_path):
+        return jsonify({'error': 'Georeferenced image not found'}), 404
+
+    # Check if caller wants just the bounds
+    if request.args.get('bounds'):
+        bounds_path = georef_path.replace('.tiff', '_bounds.json').replace('.tif', '_bounds.json')
+        if os.path.exists(bounds_path):
+            import json as json_mod
+            with open(bounds_path, 'r') as f:
+                bounds = json_mod.load(f)
+            return jsonify(bounds)
+        return jsonify({'error': 'Bounds not found'}), 404
+
+    # Convert georeferenced TIFF to JPEG for browser display
+    preview_jpg = os.path.join(EXPORT_FOLDER, f'{image_id}_preview_overlay.jpg')
+    if not os.path.exists(preview_jpg):
+        try:
+            from PIL import Image as PILImage
+            PILImage.MAX_IMAGE_PIXELS = 500_000_000
+            img = PILImage.open(georef_path)
+            if img.mode == 'RGBA':
+                # Keep transparency by converting to PNG instead
+                preview_png = os.path.join(EXPORT_FOLDER, f'{image_id}_preview_overlay.png')
+                img.save(preview_png, 'PNG')
+                return send_file(preview_png, mimetype='image/png')
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            img.save(preview_jpg, 'JPEG', quality=85)
+        except Exception as e:
+            return jsonify({'error': f'Preview generation failed: {e}'}), 500
+
+    return send_file(preview_jpg, mimetype='image/jpeg')
+
+
 @app.route('/api/export', methods=['POST'])
 def export():
     data = request.get_json()
@@ -314,8 +355,19 @@ def export():
     if not os.path.exists(georef_path):
         return jsonify({'error': 'Georeferenced image not found. Run georeferencing first.'}), 404
 
+    # Check for user-adjusted bounds (from the Preview & Adjust step)
+    adjusted_bounds = data.get('adjusted_bounds')
+    rotation = data.get('rotation', 0)
+
+    if adjusted_bounds:
+        # Write adjusted bounds to the sidecar JSON so exporter picks them up
+        import json as json_mod
+        bounds_path = georef_path.replace('.tiff', '_bounds.json').replace('.tif', '_bounds.json')
+        with open(bounds_path, 'w') as f:
+            json_mod.dump(adjusted_bounds, f)
+
     kmz_path = os.path.join(EXPORT_FOLDER, f'{image_id}.kmz')
-    result = generate_kmz(georef_path, kmz_path)
+    result = generate_kmz(georef_path, kmz_path, rotation=rotation)
 
     if result.get('error'):
         return jsonify({'error': result['error']}), 500

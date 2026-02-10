@@ -876,3 +876,254 @@ body {
     color: #1a1a2e;
     font-weight: 600;
 }
+
+/* ============================================================
+   Preview & Adjust Styles
+   ============================================================ */
+
+/* "Preview & Adjust" button in results modal */
+.results-modal .btn-adjust {
+    background: #0f3460;
+    color: #48dbfb;
+    border: 1px solid #48dbfb;
+    font-weight: 600;
+}
+
+.results-modal .btn-adjust:hover {
+    background: #48dbfb;
+    color: #1a1a2e;
+}
+
+/* Adjustment panel (floats over the map pane) */
+.adjust-panel {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 900;
+    background: rgba(28, 46, 74, 0.95);
+    border: 1px solid #48dbfb;
+    border-radius: 8px;
+    padding: 12px 14px;
+    min-width: 220px;
+    max-width: 260px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+.adjust-panel-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #48dbfb;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.adjust-section {
+    margin-bottom: 10px;
+}
+
+.adjust-section-label {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 4px;
+    display: block;
+}
+
+/* Directional pad for nudging */
+.nudge-pad {
+    display: grid;
+    grid-template-columns: 32px 32px 32px;
+    grid-template-rows: 32px 32px 32px;
+    gap: 2px;
+    justify-content: center;
+    margin: 0 auto;
+}
+
+.nudge-pad button {
+    width: 32px;
+    height: 32px;
+    background: #0f3460;
+    border: 1px solid #333;
+    color: #e0e0e0;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background 0.15s;
+}
+
+.nudge-pad button:hover {
+    background: #48dbfb;
+    color: #1a1a2e;
+    border-color: #48dbfb;
+}
+
+.nudge-pad button:active {
+    background: #4ecca3;
+    border-color: #4ecca3;
+}
+
+.nudge-center {
+    background: transparent !important;
+    border: 1px dashed #333 !important;
+    cursor: default !important;
+    font-size: 10px !important;
+    color: #555 !important;
+}
+
+.nudge-center:hover {
+    background: transparent !important;
+    color: #555 !important;
+    border-color: #333 !important;
+}
+
+/* Scale buttons */
+.scale-controls {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+}
+
+.scale-controls button {
+    flex: 1;
+    padding: 4px 8px;
+    background: #0f3460;
+    border: 1px solid #333;
+    color: #e0e0e0;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.15s;
+}
+
+.scale-controls button:hover {
+    background: #48dbfb;
+    color: #1a1a2e;
+    border-color: #48dbfb;
+}
+
+/* Opacity slider */
+.adjust-opacity-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.adjust-opacity-row input[type="range"] {
+    flex: 1;
+    accent-color: #48dbfb;
+    height: 4px;
+}
+
+.adjust-opacity-val {
+    font-size: 11px;
+    color: #48dbfb;
+    min-width: 32px;
+    text-align: right;
+}
+
+/* Rotation input */
+.adjust-rotation-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.adjust-rotation-row input[type="number"] {
+    width: 64px;
+    padding: 3px 6px;
+    border: 1px solid #333;
+    border-radius: 3px;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-size: 12px;
+    text-align: center;
+}
+
+.adjust-rotation-row input[type="number"]:focus {
+    outline: none;
+    border-color: #48dbfb;
+}
+
+.adjust-rotation-unit {
+    font-size: 11px;
+    color: #888;
+}
+
+/* Action buttons row */
+.adjust-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #333;
+}
+
+.adjust-actions button {
+    flex: 1;
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    transition: background 0.15s;
+}
+
+.adjust-btn-accept {
+    background: #4ecca3;
+    color: #1a1a2e;
+}
+
+.adjust-btn-accept:hover {
+    background: #6fe8bc;
+}
+
+.adjust-btn-reset {
+    background: transparent;
+    color: #f0a500;
+    border: 1px solid #f0a500 !important;
+}
+
+.adjust-btn-reset:hover {
+    background: #f0a500;
+    color: #1a1a2e;
+}
+
+.adjust-btn-cancel {
+    background: transparent;
+    color: #e94560;
+    border: 1px solid #e94560 !important;
+}
+
+.adjust-btn-cancel:hover {
+    background: #e94560;
+    color: #fff;
+}
+
+/* Drag hint */
+.adjust-hint {
+    font-size: 10px;
+    color: #888;
+    text-align: center;
+    margin-top: 6px;
+    line-height: 1.4;
+}
+
+.adjust-hint em {
+    color: #48dbfb;
+    font-style: normal;
+}
+
+/* Drag cursor when over the preview overlay */
+.preview-dragging {
+    cursor: move !important;
+}
+
+.preview-dragging .leaflet-tile-pane {
+    cursor: move !important;
+}
