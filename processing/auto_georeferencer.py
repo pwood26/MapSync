@@ -60,6 +60,10 @@ def run_auto_georeferencing(image_id, tiff_path, bounds):
     except Exception as e:
         return {'error': f'Failed to download satellite imagery: {e}'}
 
+    print(f'[auto_georeferencer] Reference imagery: zoom {ref.get("zoom")}, '
+          f'{ref.get("tile_count")} tiles, '
+          f'{ref.get("failures", 0)} failures')
+
     # --- Step 2: Feature matching ---
     try:
         result = auto_match(

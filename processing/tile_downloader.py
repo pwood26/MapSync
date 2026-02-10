@@ -13,20 +13,46 @@ ESRI_TILE_URL = (
 TILE_SIZE = 256
 REQUEST_DELAY = 0.05  # 50ms between tile requests
 MAX_RETRIES = 3
+MAX_TILES = 400
+MAX_ZOOM = 17
+MIN_ZOOM = 13  # ~19 m/px — below this, imagery is too coarse for feature matching
 USER_AGENT = 'MapSync/1.0 (aerial-georeferencing)'
 
 
-def download_reference_image(bounds, zoom=17):
+def _best_zoom_for_bounds(bounds, max_tiles=MAX_TILES):
+    """Find the highest zoom level where the tile count stays within budget.
+
+    Steps down from MAX_ZOOM (17) to MIN_ZOOM (13), returning the first
+    zoom level that requires <= max_tiles tiles.
+
+    Args:
+        bounds: dict with 'north', 'south', 'east', 'west'.
+        max_tiles: maximum number of tiles allowed.
+
+    Returns:
+        (zoom, total_tiles) tuple, or None if even MIN_ZOOM exceeds the budget.
+    """
+    for z in range(MAX_ZOOM, MIN_ZOOM - 1, -1):
+        x_min, y_min = _lat_lon_to_tile(bounds['north'], bounds['west'], z)
+        x_max, y_max = _lat_lon_to_tile(bounds['south'], bounds['east'], z)
+        total = (x_max - x_min + 1) * (y_max - y_min + 1)
+        if total <= max_tiles:
+            return z, total
+    return None
+
+
+def download_reference_image(bounds, zoom=None):
     """Download and stitch Esri World Imagery tiles for a bounding box.
 
     Args:
         bounds: dict with 'north', 'south', 'east', 'west' (WGS84).
-        zoom: tile zoom level (default 17 ≈ 1.2 m/px).
+        zoom: tile zoom level. If None (default), auto-selects the highest
+              zoom that keeps tile count within the budget (max 400 tiles).
 
     Returns:
         dict with 'image' (numpy BGR array), 'geo_transform'
         (origin_lon, origin_lat, px_size_lon, px_size_lat),
-        and 'bounds' (actual bounds of the tile grid).
+        'bounds' (actual bounds of the tile grid), and 'zoom' (chosen level).
 
     Raises:
         ValueError on invalid bounds or excessive tile count.
@@ -37,6 +63,34 @@ def download_reference_image(bounds, zoom=17):
     east = bounds['east']
     west = bounds['west']
 
+    # Auto-select zoom if not explicitly provided
+    if zoom is None:
+        best = _best_zoom_for_bounds(bounds)
+        if best is None:
+            # Even at MIN_ZOOM the area is too large
+            x_min, y_min = _lat_lon_to_tile(north, west, MIN_ZOOM)
+            x_max, y_max = _lat_lon_to_tile(south, east, MIN_ZOOM)
+            total_at_min = (x_max - x_min + 1) * (y_max - y_min + 1)
+            raise ValueError(
+                f'Bounding box requires {total_at_min} tiles at minimum zoom '
+                f'{MIN_ZOOM} (max {MAX_TILES}). The area is too large for '
+                'automatic georeferencing. Draw a smaller bounding box.'
+            )
+        zoom, total_tiles = best
+        print(f'[tile_downloader] Auto-selected zoom {zoom} '
+              f'({total_tiles} tiles) for bounds '
+              f'{south:.4f},{west:.4f} → {north:.4f},{east:.4f}')
+    else:
+        # Explicit zoom — validate tile count
+        x_min, y_min = _lat_lon_to_tile(north, west, zoom)
+        x_max, y_max = _lat_lon_to_tile(south, east, zoom)
+        total_tiles = (x_max - x_min + 1) * (y_max - y_min + 1)
+        if total_tiles > MAX_TILES:
+            raise ValueError(
+                f'Bounding box requires {total_tiles} tiles at zoom {zoom} '
+                f'(max {MAX_TILES}). Draw a smaller area.'
+            )
+
     # Tile indices for the bounding box corners
     x_min, y_min = _lat_lon_to_tile(north, west, zoom)
     x_max, y_max = _lat_lon_to_tile(south, east, zoom)
@@ -45,11 +99,6 @@ def download_reference_image(bounds, zoom=17):
     num_tiles_y = y_max - y_min + 1
     total_tiles = num_tiles_x * num_tiles_y
 
-    if total_tiles > 400:
-        raise ValueError(
-            f'Bounding box requires {total_tiles} tiles (max 400). '
-            'Draw a smaller area.'
-        )
     if total_tiles < 1:
         raise ValueError('Bounding box is too small or invalid.')
 
@@ -103,6 +152,7 @@ def download_reference_image(bounds, zoom=17):
         },
         'tile_count': total_tiles,
         'failures': failures,
+        'zoom': zoom,
     }
 
 
