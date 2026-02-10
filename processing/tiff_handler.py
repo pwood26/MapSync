@@ -53,7 +53,7 @@ def convert_to_preview(tiff_path, preview_path, max_dim=PREVIEW_MAX_DIM):
         else:
             new_w, new_h = orig_w, orig_h
 
-        img.save(preview_path, 'PNG', optimize=True)
+        img.save(preview_path, 'PNG')
 
     scale_factor = orig_w / new_w
 
