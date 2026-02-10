@@ -65,18 +65,17 @@ function startBboxDrawing() {
 
     // Update UI
     var btn = document.getElementById('autoGeorefBtn');
-    btn.textContent = 'Cancel';
-    btn.classList.add('active');
+    if (btn) { btn.textContent = 'Cancel'; btn.classList.add('active'); }
     updateGcpStatus('Draw a rectangle on the map covering the approximate area of the aerial photo.');
 
     // Show mode indicator
     var indicator = document.getElementById('modeIndicator');
-    indicator.textContent = 'Draw a bounding box on the map';
-    indicator.style.display = 'block';
+    if (indicator) { indicator.textContent = 'Draw a bounding box on the map'; indicator.style.display = 'block'; }
 
     // Disable map dragging so mousedown starts the rectangle
     map.dragging.disable();
-    map.getContainer().style.cursor = 'crosshair';
+    var mapContainer = map.getContainer();
+    if (mapContainer) mapContainer.style.cursor = 'crosshair';
 
     // Create handlers
     AutoGeoref._onMouseDown = function (e) {
@@ -139,15 +138,16 @@ function finishBboxDrawing() {
 
     // Restore map
     map.dragging.enable();
-    map.getContainer().style.cursor = '';
+    var mapContainer = map.getContainer();
+    if (mapContainer) mapContainer.style.cursor = '';
 
     // Reset button
     var btn = document.getElementById('autoGeorefBtn');
-    btn.textContent = 'Auto-Georeference';
-    btn.classList.remove('active');
+    if (btn) { btn.textContent = 'Auto-Georeference'; btn.classList.remove('active'); }
 
     // Hide mode indicator
-    document.getElementById('modeIndicator').style.display = 'none';
+    var indicator = document.getElementById('modeIndicator');
+    if (indicator) indicator.style.display = 'none';
 }
 
 function cancelBboxDrawing() {

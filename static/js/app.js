@@ -90,13 +90,17 @@ function handleFileUpload(e) {
             clearAllGcps();
 
             // Initialize the aerial viewer
-            document.getElementById('aerialPlaceholder').style.display = 'none';
+            var placeholder = document.getElementById('aerialPlaceholder');
+            if (placeholder) placeholder.style.display = 'none';
             AppState.aerialViewer = initAerialViewer('aerial-viewer', data.preview_url);
 
             // Enable the Add GCP and Auto-Georeference buttons
-            document.getElementById('addGcpBtn').disabled = false;
-            document.getElementById('autoGeorefBtn').disabled = false;
-            document.getElementById('rotationControls').style.display = 'flex';
+            var addGcpEl = document.getElementById('addGcpBtn');
+            var autoGeorefEl = document.getElementById('autoGeorefBtn');
+            var rotCtrl = document.getElementById('rotationControls');
+            if (addGcpEl) addGcpEl.disabled = false;
+            if (autoGeorefEl) autoGeorefEl.disabled = false;
+            if (rotCtrl) rotCtrl.style.display = 'flex';
 
             // Display metadata info if available
             displayMetadataInfo(data.metadata);
@@ -156,63 +160,59 @@ function setMode(mode) {
     var addBtn = document.getElementById('addGcpBtn');
     var cancelBtn = document.getElementById('cancelGcpBtn');
 
-    aerialPane.classList.remove('active-target');
-    mapPane.classList.remove('active-target');
+    if (aerialPane) aerialPane.classList.remove('active-target');
+    if (mapPane) mapPane.classList.remove('active-target');
 
     if (mode === 'navigate') {
-        indicator.style.display = 'none';
-        addBtn.classList.remove('active');
-        addBtn.textContent = 'Add GCP';
-        cancelBtn.style.display = 'none';
+        if (indicator) indicator.style.display = 'none';
+        if (addBtn) { addBtn.classList.remove('active'); addBtn.textContent = 'Add GCP'; }
+        if (cancelBtn) cancelBtn.style.display = 'none';
         // Re-enable map and aerial navigation
         if (AppState.mapInstance) AppState.mapInstance.dragging.enable();
         if (AppState.aerialViewer) AppState.aerialViewer.setMouseNavEnabled(true);
     } else if (mode === 'place_aerial') {
-        indicator.style.display = 'block';
-        indicator.textContent = 'Step 1: Click a point on the aerial photo';
-        aerialPane.classList.add('active-target');
-        addBtn.classList.add('active');
-        addBtn.textContent = 'Placing...';
-        cancelBtn.style.display = 'inline-block';
+        if (indicator) { indicator.style.display = 'block'; indicator.textContent = 'Step 1: Click a point on the aerial photo'; }
+        if (aerialPane) aerialPane.classList.add('active-target');
+        if (addBtn) { addBtn.classList.add('active'); addBtn.textContent = 'Placing...'; }
+        if (cancelBtn) cancelBtn.style.display = 'inline-block';
         updateGcpStatus('Click a recognizable point on the aerial photo (road intersection, building corner, etc.)');
     } else if (mode === 'place_map') {
-        indicator.style.display = 'block';
-        indicator.textContent = 'Step 2: Click the same point on the map';
-        mapPane.classList.add('active-target');
-        addBtn.classList.add('active');
-        addBtn.textContent = 'Placing...';
-        cancelBtn.style.display = 'inline-block';
+        if (indicator) { indicator.style.display = 'block'; indicator.textContent = 'Step 2: Click the same point on the map'; }
+        if (mapPane) mapPane.classList.add('active-target');
+        if (addBtn) { addBtn.classList.add('active'); addBtn.textContent = 'Placing...'; }
+        if (cancelBtn) cancelBtn.style.display = 'inline-block';
         updateGcpStatus('Click the corresponding point on the satellite map');
     }
 }
 
 function updateGcpStatus(text) {
-    document.getElementById('gcpStatus').textContent = text;
+    var el = document.getElementById('gcpStatus');
+    if (el) el.textContent = text;
 }
 
 function updateExportButton() {
     var btn = document.getElementById('exportBtn');
-    btn.disabled = AppState.gcps.length < 5;
+    if (btn) btn.disabled = AppState.gcps.length < 5;
     var counter = document.getElementById('gcpCounter');
+    if (!counter) return;
     if (AppState.imageId) {
         counter.textContent = AppState.gcps.length + '/5 minimum GCPs';
-        if (AppState.gcps.length >= 5) {
-            counter.style.color = '#4ecca3';
-        } else {
-            counter.style.color = '#e94560';
-        }
+        counter.style.color = AppState.gcps.length >= 5 ? '#4ecca3' : '#e94560';
     } else {
         counter.textContent = '';
     }
 }
 
 function showLoading(text) {
-    document.getElementById('loadingText').textContent = text || 'Processing...';
-    document.getElementById('loadingOverlay').style.display = 'flex';
+    var loadingText = document.getElementById('loadingText');
+    var overlay = document.getElementById('loadingOverlay');
+    if (loadingText) loadingText.textContent = text || 'Processing...';
+    if (overlay) overlay.style.display = 'flex';
 }
 
 function hideLoading() {
-    document.getElementById('loadingOverlay').style.display = 'none';
+    var overlay = document.getElementById('loadingOverlay');
+    if (overlay) overlay.style.display = 'none';
 }
 
 function displayMetadataInfo(metadata) {
