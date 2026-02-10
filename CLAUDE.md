@@ -15,8 +15,13 @@ Georeferencing tool for aligning aerial photos to geographic coordinates using G
 ```
 app.py                    # Flask app with API routes
 processing/
-  tiff_handler.py         # TIFF validation & PNG preview generation
+  tiff_handler.py         # TIFF validation, PNG preview, metadata extraction
   georeferencer.py        # GDAL georeferencing pipeline (gdal_translate + gdalwarp TPS)
+  metadata_georeferencer.py  # Generate GCPs from metadata (center+GSD, corners)
+  auto_georeferencer.py   # AI feature matching pipeline (tile download + matching)
+  worldfile_parser.py     # Parse ESRI World Files (.tfw)
+  footprint_parser.py     # Parse GeoJSON footprint files
+  zip_handler.py          # Extract USGS ZIP packages
   exporter.py             # KMZ generation (KML + JPEG in ZIP)
   vector_handler.py       # Vector file conversion to GeoJSON (ogr2ogr)
 templates/
@@ -24,15 +29,19 @@ templates/
 static/
   css/main.css            # Dark theme styling
   js/
-    app.js                # App state, file upload, mode switching
+    app.js                # App state, file upload, metadata display
     aerial-viewer.js      # OpenSeadragon wrapper, rotation, GCP marker placement
     map-viewer.js         # Leaflet map, GCP clicks, vector overlays, search
     gcp-manager.js        # GCP table management, error display
     export-handler.js     # Georeferencing trigger, results modal, KMZ download
+    auto-georef.js        # Auto-georef with metadata guidance
   uploads/                # Temp TIFF storage (gitignored)
   previews/               # PNG previews (gitignored)
   exports/                # Georeferenced TIFFs & KMZ (gitignored)
   overlays/               # Temp vector files (gitignored)
+  temp_extract/           # Temp ZIP extraction (gitignored)
+docs/
+  USGS_DOWNLOAD_GUIDE.md  # USGS download package guide (world files & footprints)
 ```
 
 ## Key Commands
@@ -50,6 +59,12 @@ python3 app.py
 ## Architecture Notes
 
 - **Preview/Original pattern:** Original TIFF stays server-side; browser works with a scaled PNG preview. Pixel coordinates are scaled back to original dimensions using `scale_factor`.
+- **Metadata-guided AI georeferencing:**
+  - Extracts location metadata from GDAL geotransform, USGS world files (.tfw), GeoJSON footprints, or EXIF GPS
+  - Uses metadata to auto-generate bounding box for AI feature matching
+  - AI feature matching (SIFT/ORB) provides sub-meter precision
+  - Fallback to manual bounding box if no metadata available
+  - Compatible with USGS download packages (TIFF + TFW + footprint GeoJSON)
 - **Two-phase GCP placement:** User clicks aerial photo first (captures pixel X/Y), then clicks satellite map (captures lat/lon). Minimum 5 GCPs required for export.
 - **GDAL subprocess calls:** No Python GDAL bindings — uses `gdal_translate` (embed GCPs), `gdalwarp` (thin-plate spline transform), `gdalinfo` (read bounds), `ogr2ogr`/`ogrinfo` (vector conversion).
 - **Stateless API:** All app state lives client-side in the `AppState` object. Each API call is independent.

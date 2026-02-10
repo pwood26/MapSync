@@ -3,6 +3,7 @@ static/uploads/
 static/previews/
 static/exports/
 static/overlays/
+static/temp_extract/
 
 # Python
 __pycache__/

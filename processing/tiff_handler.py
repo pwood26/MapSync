@@ -65,14 +65,16 @@ def convert_to_preview(tiff_path, preview_path, max_dim=PREVIEW_MAX_DIM):
 def extract_metadata(tiff_path):
     """Extract georeferencing metadata from TIFF file.
 
-    Checks multiple sources:
+    Checks multiple sources in priority order:
     1. GDAL geotransform (already georeferenced TIFF)
-    2. EXIF GPS tags (from aerial camera)
-    3. TIFF tags with coordinate info
+    2. USGS M2M API (if Entity ID detected in filename)
+    3. EXIF GPS tags (from aerial camera)
+    4. TIFF tags with coordinate info
 
     Returns dict with:
     - 'has_georeference': bool (if GDAL geotransform exists)
     - 'has_gps': bool (if GPS EXIF tags exist)
+    - 'has_usgs_metadata': bool (if USGS API data retrieved)
     - 'center_lat', 'center_lon': float (if available)
     - 'corners': dict with north/south/east/west (if available)
     - 'gsd': float (ground sample distance in meters, if available)
@@ -81,6 +83,7 @@ def extract_metadata(tiff_path):
     metadata = {
         'has_georeference': False,
         'has_gps': False,
+        'has_usgs_metadata': False,
         'center_lat': None,
         'center_lon': None,
         'corners': None,
@@ -94,6 +97,28 @@ def extract_metadata(tiff_path):
         metadata.update(gdal_meta)
         metadata['has_georeference'] = True
         metadata['source'] = 'GDAL GeoTransform'
+        return metadata
+
+    # Try world file (.tfw) - USGS download package
+    from processing.worldfile_parser import try_extract_from_worldfile
+    # Get image dimensions for world file parsing
+    with Image.open(tiff_path) as img:
+        width, height = img.size
+
+    worldfile_meta = try_extract_from_worldfile(tiff_path, width, height)
+    if worldfile_meta:
+        metadata.update(worldfile_meta)
+        metadata['has_georeference'] = True
+        metadata['source'] = worldfile_meta.get('source', 'World File')
+        return metadata
+
+    # Try GeoJSON footprint - USGS download package
+    from processing.footprint_parser import try_extract_from_footprint
+    footprint_meta = try_extract_from_footprint(tiff_path)
+    if footprint_meta:
+        metadata.update(footprint_meta)
+        metadata['has_georeference'] = True
+        metadata['source'] = footprint_meta.get('source', 'GeoJSON Footprint')
         return metadata
 
     # Check for GPS EXIF tags

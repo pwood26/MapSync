@@ -16,12 +16,13 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
 PREVIEW_FOLDER = os.path.join(BASE_DIR, 'static', 'previews')
 EXPORT_FOLDER = os.path.join(BASE_DIR, 'static', 'exports')
 OVERLAY_FOLDER = os.path.join(BASE_DIR, 'static', 'overlays')
-ALLOWED_EXTENSIONS = {'.tif', '.tiff'}
+TEMP_EXTRACT_FOLDER = os.path.join(BASE_DIR, 'static', 'temp_extract')
+ALLOWED_EXTENSIONS = {'.tif', '.tiff', '.zip'}
 ALLOWED_OVERLAY_EXTENSIONS = set(SUPPORTED_EXTENSIONS.keys())
 
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
 
-for folder in [UPLOAD_FOLDER, PREVIEW_FOLDER, EXPORT_FOLDER, OVERLAY_FOLDER]:
+for folder in [UPLOAD_FOLDER, PREVIEW_FOLDER, EXPORT_FOLDER, OVERLAY_FOLDER, TEMP_EXTRACT_FOLDER]:
     os.makedirs(folder, exist_ok=True)
 
 
@@ -41,17 +42,61 @@ def upload():
 
     ext = os.path.splitext(f.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
-        return jsonify({'error': 'Only .tif/.tiff files are allowed'}), 400
+        return jsonify({'error': 'Only .tif/.tiff/.zip files are allowed'}), 400
 
     image_id = str(uuid.uuid4())
-    tiff_path = os.path.join(UPLOAD_FOLDER, f'{image_id}.tiff')
-    f.save(tiff_path)
 
+    # Handle ZIP files (USGS download packages)
+    if ext == '.zip':
+        from processing.zip_handler import extract_usgs_package, get_package_info
+        import shutil
+
+        # Save uploaded ZIP
+        zip_path = os.path.join(UPLOAD_FOLDER, f'{image_id}.zip')
+        f.save(zip_path)
+
+        # Extract to temporary directory
+        extract_dir = os.path.join(TEMP_EXTRACT_FOLDER, image_id)
+        os.makedirs(extract_dir, exist_ok=True)
+
+        extracted = extract_usgs_package(zip_path, extract_dir)
+
+        if not extracted or 'tiff' not in extracted:
+            # Clean up
+            os.remove(zip_path)
+            if os.path.exists(extract_dir):
+                shutil.rmtree(extract_dir)
+            return jsonify({'error': 'No valid TIFF found in ZIP package'}), 400
+
+        # Move TIFF to upload folder
+        tiff_path = os.path.join(UPLOAD_FOLDER, f'{image_id}.tiff')
+        shutil.copy2(extracted['tiff'], tiff_path)
+
+        # Move companion files if they exist
+        if extracted.get('worldfile'):
+            worldfile_dest = os.path.join(UPLOAD_FOLDER, f'{image_id}.tfw')
+            shutil.copy2(extracted['worldfile'], worldfile_dest)
+
+        if extracted.get('footprint'):
+            footprint_dest = os.path.join(UPLOAD_FOLDER, f'{image_id}_footprint.geojson')
+            shutil.copy2(extracted['footprint'], footprint_dest)
+
+        # Clean up ZIP and extraction directory
+        os.remove(zip_path)
+        shutil.rmtree(extract_dir)
+
+    else:
+        # Handle regular TIFF upload
+        tiff_path = os.path.join(UPLOAD_FOLDER, f'{image_id}.tiff')
+        f.save(tiff_path)
+
+    # Validate TIFF
     valid, info = validate_tiff(tiff_path)
     if not valid:
         os.remove(tiff_path)
         return jsonify({'error': info}), 400
 
+    # Generate preview
     preview_path = os.path.join(PREVIEW_FOLDER, f'{image_id}.png')
     preview_info = convert_to_preview(tiff_path, preview_path)
 
