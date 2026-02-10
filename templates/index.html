@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MapSync - Aerial Photo Georeferencing</title>
+
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- OpenSeadragon -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.1/openseadragon.min.js"></script>
+
+    <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+    <!-- Header -->
+    <header id="header">
+        <div class="header-left">
+            <div class="logo-container">
+                <img src="/static/images/jw-logo.svg" alt="Jones Walker" class="logo-img">
+            </div>
+            <div class="header-divider"></div>
+            <div class="header-title-block">
+                <h1>MapSync</h1>
+                <span class="tagline">Aerial Photo Georeferencing</span>
+            </div>
+        </div>
+        <div class="header-right">
+            <label class="upload-btn" id="uploadBtn">
+                Upload TIFF
+                <input type="file" id="fileInput" accept=".tif,.tiff" hidden>
+            </label>
+            <label class="overlay-upload-btn" id="overlayUploadBtn">
+                Add Overlay
+                <input type="file" id="overlayFileInput"
+                       accept=".zip,.kmz,.kml,.geojson,.json,.gpx,.shp" hidden>
+            </label>
+            <button id="autoGeorefBtn" class="auto-georef-btn" disabled>Auto-Georeference</button>
+            <button id="exportBtn" class="export-btn" disabled>Export GeoTIFF</button>
+        </div>
+    </header>
+
+    <!-- Disclaimer -->
+    <div class="disclaimer-bar">
+        <div class="disclaimer-inner">
+            <p class="disclaimer-text">
+                <span class="disclaimer-label">DISCLAIMER:</span>
+                This tool uses AI to georeference historical aerial photographs. It is provided for informational purposes only. Please contact <a href="mailto:pwood@joneswalker.com" class="disclaimer-link">Phil Wood</a> at <a href="mailto:pwood@joneswalker.com" class="disclaimer-link">pwood@joneswalker.com</a> with any questions about this tool.
+            </p>
+        </div>
+    </div>
+
+    <!-- Main dual-pane area -->
+    <div id="main-container">
+        <!-- Left pane: Aerial photo -->
+        <div id="aerial-pane" class="pane">
+            <div class="pane-header">
+                <span class="pane-title">Aerial Photo</span>
+                <div class="rotation-controls" id="rotationControls" style="display: none;">
+                    <span class="rotate-hint">Shift+drag to rotate</span>
+                    <button id="rotateLeft" title="Rotate left 90deg">&#x21BA;</button>
+                    <input type="range" id="rotationSlider" min="-180" max="180" value="0" step="1">
+                    <input type="number" id="rotationInput" min="-180" max="180" value="0" step="0.1"
+                           title="Type exact angle">
+                    <span id="rotationValue">0&deg;</span>
+                    <button id="rotateRight" title="Rotate right 90deg">&#x21BB;</button>
+                    <button id="rotateReset" title="Reset rotation">Reset</button>
+                </div>
+            </div>
+            <div id="aerial-viewer" class="viewer-container">
+                <div class="placeholder" id="aerialPlaceholder">
+                    <p>Upload a TIFF aerial photo to begin</p>
+                    <p class="hint">Supports single-frame TIFF images from USGS EarthExplorer</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right pane: Map -->
+        <div id="map-pane" class="pane">
+            <div class="pane-header">
+                <span class="pane-title">Reference Map</span>
+                <div class="search-container">
+                    <form id="searchForm">
+                        <input type="text" id="searchInput" placeholder="Search: address, town, or lat,lon">
+                        <button type="submit">Search</button>
+                    </form>
+                </div>
+            </div>
+            <div id="map-viewer" class="viewer-container"></div>
+            <!-- Overlay list panel (floats over map) -->
+            <div id="overlayPanel" class="overlay-panel" style="display: none;">
+                <div class="overlay-panel-header">
+                    <span>Overlays</span>
+                </div>
+                <div id="overlayList" class="overlay-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Metadata Info Banner -->
+    <div id="metadataInfo" class="metadata-info" style="display: none;"></div>
+
+    <!-- GCP Panel -->
+    <div id="gcp-panel">
+        <div class="gcp-toolbar">
+            <button id="addGcpBtn" class="gcp-add-btn" disabled>Add GCP</button>
+            <button id="cancelGcpBtn" class="gcp-cancel-btn" style="display: none;">Cancel</button>
+            <span id="gcpStatus" class="gcp-status">Upload a TIFF to start</span>
+            <span id="gcpCounter" class="gcp-counter"></span>
+        </div>
+        <div class="gcp-table-wrapper">
+            <table id="gcpTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Aerial X</th>
+                        <th>Aerial Y</th>
+                        <th>Latitude</th>
+                        <th>Longitude</th>
+                        <th>Error</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="gcpTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Mode indicator overlay -->
+    <div id="modeIndicator" class="mode-indicator" style="display: none;"></div>
+
+    <!-- Loading overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p id="loadingText">Processing...</p>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/aerial-viewer.js"></script>
+    <script src="/static/js/map-viewer.js"></script>
+    <script src="/static/js/gcp-manager.js"></script>
+    <script src="/static/js/export-handler.js"></script>
+    <script src="/static/js/auto-georef.js"></script>
+</body>
+</html>
