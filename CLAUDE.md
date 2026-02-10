@@ -56,6 +56,18 @@ python3 app.py
 # GDAL must be installed separately (e.g., brew install gdal)
 ```
 
+## Deployment
+
+### Railway
+- **GitHub Repository:** https://github.com/pwood26/MapSync
+- **Configuration:**
+  - `Aptfile` - Installs GDAL system packages (gdal-bin, libgdal-dev)
+  - `Procfile` - Defines web process: `gunicorn --bind 0.0.0.0:$PORT app:app`
+  - `requirements.txt` - Python dependencies including gunicorn
+  - `railway.json` - Build and deploy configuration
+- **Environment Variables:** None required (uses free public APIs)
+- **Port Binding:** App reads `PORT` from environment, defaults to 5051 locally
+
 ## Architecture Notes
 
 - **Preview/Original pattern:** Original TIFF stays server-side; browser works with a scaled PNG preview. Pixel coordinates are scaled back to original dimensions using `scale_factor`.
