@@ -198,6 +198,14 @@ def auto_georeference():
     # Extract metadata to determine bounding box automatically
     metadata = extract_metadata(tiff_path)
 
+    print(f'[auto-georeference] image_id={image_id}, '
+          f'force_feature_matching={force_feature_matching}, '
+          f'has_bounds={bounds is not None}, '
+          f'metadata: has_georef={metadata.get("has_georeference")}, '
+          f'has_gps={metadata.get("has_gps")}, '
+          f'corners={metadata.get("corners") is not None}, '
+          f'source={metadata.get("source")}')
+
     # If metadata provides location, use it to auto-generate bounding box for AI matching
     if not force_feature_matching and metadata.get('corners'):
         # Already georeferenced - use metadata corners as bounding box for AI refinement
@@ -245,9 +253,14 @@ def auto_georeference():
 
     # If we have bounds (from metadata or user), run AI feature matching
     if bounds:
+        print(f'[auto-georeference] Running with bounds: '
+              f'N={bounds.get("north")}, S={bounds.get("south")}, '
+              f'E={bounds.get("east")}, W={bounds.get("west")}')
+
         result = run_auto_georeferencing(image_id, tiff_path, bounds)
 
         if result.get('error'):
+            print(f'[auto-georeference] Failed: {result["error"]}')
             return jsonify(result), 422
 
         # Indicate whether metadata helped or if purely manual

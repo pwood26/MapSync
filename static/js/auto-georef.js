@@ -201,6 +201,12 @@ function runAutoGeoreferenceWithMetadata() {
         })
         .catch(function (err) {
             hideLoading();
+
+            // Hide the metadata info bar — its "Click Auto-Georeference" hint
+            // is no longer relevant since auto-georef failed
+            var metaInfo = document.getElementById('metadataInfo');
+            if (metaInfo) metaInfo.style.display = 'none';
+
             // If metadata-guided matching fails, offer manual bounding box
             if (confirm('Automatic georeferencing failed:\n\n' + err.message + '\n\nWould you like to manually draw a bounding box for AI matching?')) {
                 startBboxDrawing();
@@ -256,6 +262,10 @@ function runAutoGeoreference() {
                 AppState.mapInstance.removeLayer(AutoGeoref.rect);
                 AutoGeoref.rect = null;
             }
+
+            // Hide the metadata info bar on failure
+            var metaInfo = document.getElementById('metadataInfo');
+            if (metaInfo) metaInfo.style.display = 'none';
 
             updateGcpStatus('Auto-matching failed: ' + err.message);
             alert('Auto-georeferencing failed:\n\n' + err.message);
