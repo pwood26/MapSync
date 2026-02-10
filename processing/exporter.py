@@ -1,50 +1,47 @@
+"""MapSync - KMZ export using pure Python.
+
+Converts a georeferenced TIFF to KMZ (KML + JPEG in ZIP) using Pillow
+instead of GDAL command-line tools. Reads bounding box from a sidecar
+JSON file saved by the georeferencer.
+"""
+
 import json
 import os
-import subprocess
 import tempfile
 import zipfile
 
+from PIL import Image
+
+# Allow large images
+Image.MAX_IMAGE_PIXELS = 500_000_000
+
 
 def generate_kmz(georef_tiff, kmz_path):
-    """Generate a KMZ file from a georeferenced GeoTIFF.
+    """Generate a KMZ file from a georeferenced TIFF.
 
     The KMZ contains a KML ground overlay and a JPEG image,
     suitable for opening in Google Earth.
+
+    Reads geographic bounds from a sidecar JSON file
+    ({image_id}_georef_bounds.json) saved by the georeferencer.
 
     Returns:
         Dict with 'success' and 'bounds', or 'error'.
     """
     try:
-        # Step 1: Get bounding box from the georeferenced TIFF
-        bounds = get_bounds(georef_tiff)
+        # Step 1: Get bounding box from sidecar JSON
+        bounds = _read_bounds(georef_tiff)
         if not bounds:
-            return {'error': 'Could not extract bounds from georeferenced TIFF'}
+            return {'error': 'Could not find geographic bounds for the georeferenced image.'}
 
-        # Step 2: Convert georeferenced TIFF to JPEG
-        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-            jpeg_path = tmp.name
+        # Step 2: Convert TIFF to JPEG using Pillow
+        fd, jpeg_path = tempfile.mkstemp(suffix='.jpg')
+        os.close(fd)
 
-        cmd = [
-            'gdal_translate',
-            '-of', 'JPEG',
-            '-co', 'QUALITY=85',
-            '-b', '1', '-b', '2', '-b', '3',  # Ensure RGB bands only
-            georef_tiff,
-            jpeg_path,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if result.returncode != 0:
-            # Try without explicit band selection (some images have fewer bands)
-            cmd = [
-                'gdal_translate',
-                '-of', 'JPEG',
-                '-co', 'QUALITY=85',
-                georef_tiff,
-                jpeg_path,
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            if result.returncode != 0:
-                return {'error': f'JPEG conversion failed: {result.stderr}'}
+        try:
+            _tiff_to_jpeg(georef_tiff, jpeg_path)
+        except Exception as e:
+            return {'error': f'JPEG conversion failed: {e}'}
 
         # Step 3: Build KML
         kml_content = build_kml(bounds)
@@ -59,10 +56,6 @@ def generate_kmz(georef_tiff, kmz_path):
             'bounds': bounds,
         }
 
-    except subprocess.TimeoutExpired:
-        return {'error': 'JPEG conversion timed out'}
-    except FileNotFoundError:
-        return {'error': 'GDAL not found. Install with: brew install gdal'}
     except Exception as e:
         return {'error': str(e)}
     finally:
@@ -70,39 +63,40 @@ def generate_kmz(georef_tiff, kmz_path):
             os.remove(jpeg_path)
 
 
-def get_bounds(georef_tiff):
-    """Extract geographic bounding box from a georeferenced GeoTIFF."""
-    try:
-        result = subprocess.run(
-            ['gdalinfo', '-json', georef_tiff],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode != 0:
-            return None
+def _read_bounds(georef_tiff):
+    """Read geographic bounds from the sidecar JSON file."""
+    # Try common naming patterns
+    for suffix in ['_bounds.json']:
+        bounds_path = georef_tiff.replace('.tiff', suffix).replace('.tif', suffix)
+        if os.path.exists(bounds_path):
+            try:
+                with open(bounds_path, 'r') as f:
+                    bounds = json.load(f)
+                if all(k in bounds for k in ('north', 'south', 'east', 'west')):
+                    return bounds
+            except (json.JSONDecodeError, KeyError):
+                continue
 
-        info = json.loads(result.stdout)
-        corners = info.get('cornerCoordinates', {})
+    return None
 
-        upper_left = corners.get('upperLeft')
-        lower_right = corners.get('lowerRight')
-        upper_right = corners.get('upperRight')
-        lower_left = corners.get('lowerLeft')
 
-        if not all([upper_left, lower_right, upper_right, lower_left]):
-            return None
+def _tiff_to_jpeg(tiff_path, jpeg_path, quality=85):
+    """Convert a TIFF to JPEG using Pillow."""
+    img = Image.open(tiff_path)
 
-        # Compute bounding box from all corners
-        all_lons = [upper_left[0], lower_right[0], upper_right[0], lower_left[0]]
-        all_lats = [upper_left[1], lower_right[1], upper_right[1], lower_left[1]]
+    # Handle various modes
+    if img.mode == 'RGBA':
+        # Composite onto white background
+        bg = Image.new('RGB', img.size, (255, 255, 255))
+        bg.paste(img, mask=img.split()[3])
+        img = bg
+    elif img.mode != 'RGB':
+        try:
+            img = img.convert('RGB')
+        except Exception:
+            img = img.convert('L').convert('RGB')
 
-        return {
-            'north': max(all_lats),
-            'south': min(all_lats),
-            'east': max(all_lons),
-            'west': min(all_lons),
-        }
-    except Exception:
-        return None
+    img.save(jpeg_path, 'JPEG', quality=quality)
 
 
 def build_kml(bounds):
