@@ -539,11 +539,25 @@ function collectOverlayContext(bounds) {
         });
 
         if (features.length > 0) {
-            results.push({
+            var overlayResult = {
                 name: entry.name,
                 feature_count: features.length,
                 features: features.slice(0, 50),  // Cap at 50 features per overlay
-            });
+            };
+
+            // Include the overlay's full geographic bounding box so the
+            // backend can constrain AI matches to the area of interest
+            var layerBounds = entry.layer.getBounds();
+            if (layerBounds && layerBounds.isValid()) {
+                overlayResult.bounds = {
+                    north: layerBounds.getNorth(),
+                    south: layerBounds.getSouth(),
+                    east: layerBounds.getEast(),
+                    west: layerBounds.getWest(),
+                };
+            }
+
+            results.push(overlayResult);
         }
     }
 

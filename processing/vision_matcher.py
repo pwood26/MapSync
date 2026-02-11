@@ -39,6 +39,8 @@ def auto_match(tiff_path, reference_image, reference_geo_transform,
             px_size_lon, px_size_lat).
         overlay_context: optional list of vector overlay feature summaries
             to include in the prompt for better landmark identification.
+            Each entry may include a 'bounds' dict with north/south/east/west
+            to constrain GCP placement to the overlay area.
 
     Returns:
         dict with 'gcps' (list of {pixel_x, pixel_y, lat, lon}),
@@ -115,8 +117,16 @@ def auto_match(tiff_path, reference_image, reference_geo_transform,
     if parsed.get('notes'):
         print(f'[vision_matcher] Notes: {parsed["notes"]}')
 
-    # --- Stage 7-8: Convert to GCPs ---
+    # --- Stage 7: Extract overlay constraint bounds for post-filtering ---
+    overlay_bounds = _extract_overlay_bounds(overlay_context)
+    if overlay_bounds:
+        print(f'[vision_matcher] Overlay constraint bounds: '
+              f'N={overlay_bounds["north"]:.6f}, S={overlay_bounds["south"]:.6f}, '
+              f'E={overlay_bounds["east"]:.6f}, W={overlay_bounds["west"]:.6f}')
+
+    # --- Stage 8: Convert to GCPs with filtering ---
     gcps = []
+    filtered_out = 0
     for m in matches:
         # Filter low-confidence matches
         if m.get('confidence') == 'low':
@@ -134,6 +144,20 @@ def auto_match(tiff_path, reference_image, reference_geo_transform,
         lon = origin_lon + m['satellite_x'] * adj_px_size_lon
         lat = origin_lat + m['satellite_y'] * adj_px_size_lat
 
+        # Post-filter: reject GCPs whose lat/lon falls outside the overlay
+        # bounding box (with a small tolerance for edge features)
+        if overlay_bounds:
+            tolerance = 0.001  # ~111m buffer
+            if (lat > overlay_bounds['north'] + tolerance or
+                    lat < overlay_bounds['south'] - tolerance or
+                    lon > overlay_bounds['east'] + tolerance or
+                    lon < overlay_bounds['west'] - tolerance):
+                filtered_out += 1
+                print(f'[vision_matcher] Filtered out match '
+                      f'"{m.get("landmark", "?")}" at ({lat:.6f}, {lon:.6f}) '
+                      f'— outside overlay bounds')
+                continue
+
         # Scale aerial pixel back to original TIFF coordinates
         orig_px_x = m['aerial_x'] * aerial_ratio
         orig_px_y = m['aerial_y'] * aerial_ratio
@@ -145,11 +169,22 @@ def auto_match(tiff_path, reference_image, reference_geo_transform,
             'lon': round(float(lon), 6),
         })
 
+    if filtered_out > 0:
+        print(f'[vision_matcher] Filtered {filtered_out} GCPs outside overlay bounds, '
+              f'{len(gcps)} remaining')
+
     if len(gcps) < MIN_GCPS:
+        extra_hint = ''
+        if filtered_out > 0:
+            extra_hint = (
+                f' ({filtered_out} matches were outside the overlay boundary '
+                'and were filtered out.)'
+            )
         return {
             'error': (
                 f'Only {len(gcps)} valid landmark matches found '
-                f'(minimum {MIN_GCPS} required). The historical image may '
+                f'(minimum {MIN_GCPS} required).{extra_hint} '
+                'The historical image may '
                 'be too different from modern satellite imagery, or the '
                 'bounding box may not overlap the actual photo area. '
                 'Try adjusting the area or use manual GCP placement.'
@@ -404,9 +439,11 @@ def _call_claude_vision(aerial_b64, aerial_media, ref_b64, ref_media,
                 '- Points that have clearly changed between time periods\n'
                 '- Points near the very edge of either image\n\n'
 
-                'SPATIAL DISTRIBUTION: Spread points across the entire '
-                'overlapping area. Do NOT cluster points in one region. '
-                'Aim for at least one point in each quadrant.\n\n'
+                'SPATIAL DISTRIBUTION: Spread points across the '
+                'overlapping area between the two images. Do NOT cluster '
+                'points in one region. Aim for good spatial coverage. '
+                'If a vector overlay constraint is provided later, '
+                'restrict your points to that area instead.\n\n'
 
                 'COORDINATE PRECISION: Use the red grid overlay to determine '
                 'pixel coordinates. Read the nearest grid labels and estimate '
@@ -444,7 +481,7 @@ def _call_claude_vision(aerial_b64, aerial_media, ref_b64, ref_media,
     ]
 
     # Add vector overlay context if available (e.g., well locations, pipelines)
-    overlay_text = _format_overlay_context(overlay_context, ref_bounds)
+    overlay_text = _format_overlay_context(overlay_context, ref_bounds, ref_dims)
     if overlay_text:
         prompt_parts.append({
             'type': 'text',
@@ -470,16 +507,53 @@ def _call_claude_vision(aerial_b64, aerial_media, ref_b64, ref_media,
 # ============================================================
 
 
-def _format_overlay_context(overlay_context, ref_bounds):
+def _latlon_to_ref_pixel(lat, lon, ref_bounds, ref_dims):
+    """Convert a lat/lon to approximate pixel coordinates in the reference image.
+
+    Args:
+        lat, lon: geographic coordinates.
+        ref_bounds: dict with 'north', 'south', 'east', 'west'.
+        ref_dims: (width, height) of the downsampled reference image.
+
+    Returns:
+        (x, y) integer pixel tuple, or None if outside the reference image.
+    """
+    try:
+        n = ref_bounds['north']
+        s = ref_bounds['south']
+        e = ref_bounds['east']
+        w = ref_bounds['west']
+        rw, rh = ref_dims
+
+        # Normalise to 0-1 within the reference extent
+        frac_x = (lon - w) / (e - w) if e != w else 0.5
+        frac_y = (n - lat) / (n - s) if n != s else 0.5  # y increases downward
+
+        if not (0.0 <= frac_x <= 1.0 and 0.0 <= frac_y <= 1.0):
+            return None
+
+        px = int(round(frac_x * rw))
+        py = int(round(frac_y * rh))
+        return (px, py)
+    except (KeyError, TypeError, ZeroDivisionError):
+        return None
+
+
+def _format_overlay_context(overlay_context, ref_bounds, ref_dims=None):
     """Format vector overlay data into a concise text block for the prompt.
 
     Converts the structured overlay feature data from the frontend into
     a human-readable summary that helps the AI identify landmarks.
+    For point features with lat/lon, computes the approximate satellite
+    pixel coordinates so the AI can use them as direct anchors.
 
     Args:
         overlay_context: list of overlay dicts from frontend, each with
             'name', 'feature_count', 'features' (list of feature summaries).
         ref_bounds: dict with 'north', 'south', 'east', 'west'.
+        ref_dims: optional (width, height) of the downsampled reference image
+            in pixels. When provided, point features get satellite pixel
+            coordinates computed from their lat/lon.
 
     Returns:
         A string to include in the prompt, or empty string if no context.
@@ -519,14 +593,30 @@ def _format_overlay_context(overlay_context, ref_bounds):
                          or '')
                 lat = pt.get('lat', '?')
                 lon = pt.get('lon', '?')
+
+                # Compute approximate satellite pixel position so the AI
+                # can use these as direct visual anchors on the grid
+                pixel_hint = ''
+                if (ref_dims and isinstance(lat, (int, float))
+                        and isinstance(lon, (int, float))):
+                    px = _latlon_to_ref_pixel(
+                        lat, lon, ref_bounds, ref_dims)
+                    if px:
+                        pixel_hint = (f' → satellite pixel ~({px[0]}, {px[1]})')
+
                 if label:
-                    lines.append(f'    - "{label}" at ({lat}, {lon})')
+                    lines.append(
+                        f'    - "{label}" at ({lat}, {lon}){pixel_hint}')
                 else:
-                    first_val = next(iter(props.values()), None) if props else None
+                    first_val = (next(iter(props.values()), None)
+                                 if props else None)
                     if first_val:
-                        lines.append(f'    - [{first_val}] at ({lat}, {lon})')
+                        lines.append(
+                            f'    - [{first_val}] at ({lat}, {lon})'
+                            f'{pixel_hint}')
                     else:
-                        lines.append(f'    - Point at ({lat}, {lon})')
+                        lines.append(
+                            f'    - Point at ({lat}, {lon}){pixel_hint}')
                 total_features += 1
             if len(points) > 30:
                 lines.append(f'    ... and {len(points) - 30} more points')
@@ -554,16 +644,93 @@ def _format_overlay_context(overlay_context, ref_bounds):
     if total_features == 0:
         return ''
 
+    # Check if any overlay provides an explicit bounding box (property boundary,
+    # survey area, etc.).  If so, instruct the AI to keep ALL satellite-side
+    # GCPs within that area – this prevents matches from drifting outside the
+    # area of interest.
+    constraint_bounds = None
+    for overlay in overlay_context:
+        ob = overlay.get('bounds')
+        if ob and all(k in ob for k in ('north', 'south', 'east', 'west')):
+            if constraint_bounds is None:
+                constraint_bounds = dict(ob)
+            else:
+                # Merge – expand to the union of all overlay bounds
+                constraint_bounds['north'] = max(constraint_bounds['north'], ob['north'])
+                constraint_bounds['south'] = min(constraint_bounds['south'], ob['south'])
+                constraint_bounds['east'] = max(constraint_bounds['east'], ob['east'])
+                constraint_bounds['west'] = min(constraint_bounds['west'], ob['west'])
+
     lines.append(
         'Use these known feature locations as anchoring hints when identifying '
         'landmarks. Well pads, roads, canals, and other infrastructure from '
         'these overlays may be visible as distinctive features in both images. '
-        'A point feature at a specific lat/lon should help you locate the '
-        'corresponding pixel position in the satellite image using the '
-        'geographic bounds provided above.'
+        'Where a "→ satellite pixel ~(X, Y)" hint is given, that is the '
+        'pre-computed approximate pixel position of that feature in IMAGE 2 '
+        '(the satellite image). Use these pixel hints to visually locate the '
+        'feature on the satellite grid, then find the corresponding location '
+        'in IMAGE 1 (the aerial photo). These are strong anchors — prioritize '
+        'placing GCPs near these known locations.'
     )
 
+    if constraint_bounds:
+        lines.append('')
+        lines.append(
+            'CRITICAL SPATIAL CONSTRAINT: The user has loaded a vector overlay '
+            '(property boundary / survey area) that defines the area of interest. '
+            'ALL matched landmark points on the SATELLITE image MUST fall within '
+            'the following geographic bounds:\n'
+            f'  North: {constraint_bounds["north"]:.6f}\n'
+            f'  South: {constraint_bounds["south"]:.6f}\n'
+            f'  East:  {constraint_bounds["east"]:.6f}\n'
+            f'  West:  {constraint_bounds["west"]:.6f}\n'
+            'Do NOT place any satellite-side GCP points outside this area. '
+            'Concentrate your landmark search within this boundary. '
+            'It is acceptable to have fewer than 12 matches if the area is small; '
+            'accuracy within the boundary is more important than quantity.'
+        )
+
     return '\n'.join(lines)
+
+
+def _extract_overlay_bounds(overlay_context):
+    """Extract the union bounding box from all overlay entries.
+
+    Used for post-filtering GCPs that fall outside the overlay area,
+    as a hard constraint even if the AI prompt instruction is ignored.
+
+    Args:
+        overlay_context: list of overlay dicts, each optionally containing
+            a 'bounds' dict with north/south/east/west.
+
+    Returns:
+        dict with north/south/east/west, or None if no bounds available.
+    """
+    if not overlay_context:
+        return None
+
+    merged = None
+    for overlay in overlay_context:
+        ob = overlay.get('bounds')
+        if not ob or not all(k in ob for k in ('north', 'south', 'east', 'west')):
+            continue
+        try:
+            n = float(ob['north'])
+            s = float(ob['south'])
+            e = float(ob['east'])
+            w = float(ob['west'])
+        except (ValueError, TypeError):
+            continue
+
+        if merged is None:
+            merged = {'north': n, 'south': s, 'east': e, 'west': w}
+        else:
+            merged['north'] = max(merged['north'], n)
+            merged['south'] = min(merged['south'], s)
+            merged['east'] = max(merged['east'], e)
+            merged['west'] = min(merged['west'], w)
+
+    return merged
 
 
 # ============================================================
