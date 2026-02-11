@@ -877,6 +877,28 @@ body {
     font-weight: 600;
 }
 
+/* AI Match This View button */
+.ai-match-view-btn {
+    background: #0f3460;
+    color: #e0e0e0;
+    border: 1px solid #4ecca3;
+    padding: 6px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.2s;
+}
+
+.ai-match-view-btn:hover:not(:disabled) {
+    background: #4ecca3;
+    color: #1a1a2e;
+}
+
+.ai-match-view-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 /* ============================================================
    Preview & Adjust Styles
    ============================================================ */

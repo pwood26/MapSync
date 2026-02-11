@@ -5,13 +5,15 @@ MAX_SPAN = 0.5    # degrees – reject bounding boxes larger than ~50 km
 MIN_SPAN = 0.001  # degrees – reject bounding boxes smaller than ~100 m
 
 
-def run_auto_georeferencing(image_id, tiff_path, bounds):
+def run_auto_georeferencing(image_id, tiff_path, bounds, overlay_context=None):
     """Full automatic georeferencing pipeline.
 
     Args:
         image_id: UUID string for this upload.
         tiff_path: path to the uploaded TIFF on disk.
         bounds: dict with 'north', 'south', 'east', 'west'.
+        overlay_context: optional list of vector overlay feature summaries
+            to include in the AI prompt for better landmark identification.
 
     Returns:
         dict with 'success', 'gcps', 'match_count', 'confidence',
@@ -70,6 +72,7 @@ def run_auto_georeferencing(image_id, tiff_path, bounds):
             tiff_path,
             ref['image'],
             ref['geo_transform'],
+            overlay_context=overlay_context,
         )
     except Exception as e:
         return {'error': f'Feature matching failed: {e}'}

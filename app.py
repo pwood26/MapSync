@@ -187,6 +187,7 @@ def auto_georeference():
     image_id = data.get('image_id')
     bounds = data.get('bounds')
     force_feature_matching = data.get('force_feature_matching', False)
+    overlay_context = data.get('overlay_context')  # Vector overlay features for AI context
 
     if not image_id:
         return jsonify({'error': 'Missing image_id'}), 400
@@ -257,7 +258,8 @@ def auto_georeference():
               f'N={bounds.get("north")}, S={bounds.get("south")}, '
               f'E={bounds.get("east")}, W={bounds.get("west")}')
 
-        result = run_auto_georeferencing(image_id, tiff_path, bounds)
+        result = run_auto_georeferencing(image_id, tiff_path, bounds,
+                                        overlay_context=overlay_context)
 
         if result.get('error'):
             print(f'[auto-georeference] Failed: {result["error"]}')

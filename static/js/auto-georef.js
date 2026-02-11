@@ -1,10 +1,16 @@
 // MapSync - Auto-Georeferencing
-// Handles bounding box drawing on the Leaflet map and the auto-match API call.
+// Handles bounding box drawing on the Leaflet map, the "AI Match This View"
+// shortcut, vector overlay context collection, and the auto-match API call.
 
 document.addEventListener('DOMContentLoaded', function () {
     var btn = document.getElementById('autoGeorefBtn');
     if (btn) {
         btn.addEventListener('click', onAutoGeorefClick);
+    }
+
+    var aiMatchBtn = document.getElementById('aiMatchViewBtn');
+    if (aiMatchBtn) {
+        aiMatchBtn.addEventListener('click', onAiMatchViewClick);
     }
 });
 
@@ -51,6 +57,110 @@ function onAutoGeorefClick() {
         // Fall back to bounding box drawing for feature matching
         startBboxDrawing();
     }
+}
+
+// ============================================================
+// "AI Match This View" — use current map viewport as bounds
+// ============================================================
+
+function onAiMatchViewClick() {
+    if (!AppState.imageId) return;
+    if (!AppState.mapInstance) return;
+
+    var mapBounds = AppState.mapInstance.getBounds();
+    var bounds = {
+        north: mapBounds.getNorth(),
+        south: mapBounds.getSouth(),
+        east: mapBounds.getEast(),
+        west: mapBounds.getWest(),
+    };
+
+    // Validate that the viewport is a reasonable size
+    var latSpan = bounds.north - bounds.south;
+    var lonSpan = bounds.east - bounds.west;
+    if (latSpan > 0.5 || lonSpan > 0.5) {
+        alert(
+            'The current map view is too large for AI matching.\n\n' +
+            'Zoom in closer to the area where the aerial photo was taken.'
+        );
+        return;
+    }
+    if (latSpan < 0.001 && lonSpan < 0.001) {
+        alert(
+            'The current map view is too small.\n\n' +
+            'Zoom out a bit so the view covers the approximate extent ' +
+            'of the aerial photo.'
+        );
+        return;
+    }
+
+    // Collect vector overlay context for features within the bounds
+    var overlayContext = collectOverlayContext(bounds);
+
+    // Show the bounding box on the map as a visual indicator
+    if (AutoGeoref.rect) {
+        AppState.mapInstance.removeLayer(AutoGeoref.rect);
+    }
+    AutoGeoref.rect = L.rectangle(
+        [[bounds.south, bounds.west], [bounds.north, bounds.east]],
+        { color: '#4ecca3', weight: 2, dashArray: '6,4', fillOpacity: 0.08 }
+    ).addTo(AppState.mapInstance);
+
+    AutoGeoref.bounds = bounds;
+
+    // Run the API call
+    showMapLoading('Matching aerial photo to current map view...');
+
+    var payload = {
+        image_id: AppState.imageId,
+        bounds: bounds,
+        force_feature_matching: true,
+    };
+    if (overlayContext && overlayContext.length > 0) {
+        payload.overlay_context = overlayContext;
+    }
+
+    fetch('/api/auto-georeference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    })
+        .then(function (resp) {
+            return resp.json().then(function (data) {
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Auto-georeferencing failed.');
+                }
+                return data;
+            });
+        })
+        .then(function (data) {
+            populateGcpsFromAutoResult(data);
+            hideMapLoading();
+
+            if (AutoGeoref.rect) {
+                AppState.mapInstance.removeLayer(AutoGeoref.rect);
+                AutoGeoref.rect = null;
+            }
+
+            var confidence = Math.round(data.confidence * 100);
+            var overlayNote = (overlayContext && overlayContext.length > 0)
+                ? ', with overlay context' : '';
+            updateGcpStatus(
+                'AI matched ' + data.gcps.length + ' control points ' +
+                '(confidence: ' + confidence + '%, ' +
+                data.match_count + ' feature matches' + overlayNote + '). ' +
+                'Review and adjust, then click Export KMZ.'
+            );
+        })
+        .catch(function (err) {
+            hideMapLoading();
+            if (AutoGeoref.rect) {
+                AppState.mapInstance.removeLayer(AutoGeoref.rect);
+                AutoGeoref.rect = null;
+            }
+            updateGcpStatus('AI matching failed: ' + err.message);
+            alert('AI matching failed:\n\n' + err.message);
+        });
 }
 
 // ============================================================
@@ -172,13 +282,34 @@ function runAutoGeoreferenceWithMetadata() {
 
     showMapLoading('Using metadata location to guide AI feature matching...');
 
+    // Collect overlay context from current map view if zoomed in reasonably
+    var overlayContext = [];
+    if (AppState.mapInstance) {
+        var mapBounds = AppState.mapInstance.getBounds();
+        var viewBounds = {
+            north: mapBounds.getNorth(),
+            south: mapBounds.getSouth(),
+            east: mapBounds.getEast(),
+            west: mapBounds.getWest(),
+        };
+        var latSpan = viewBounds.north - viewBounds.south;
+        if (latSpan < 0.5) {
+            overlayContext = collectOverlayContext(viewBounds);
+        }
+    }
+
+    var payload = {
+        image_id: AppState.imageId,
+        // Bounds will be auto-generated from metadata
+    };
+    if (overlayContext && overlayContext.length > 0) {
+        payload.overlay_context = overlayContext;
+    }
+
     fetch('/api/auto-georeference', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            image_id: AppState.imageId,
-            // Bounds will be auto-generated from metadata
-        }),
+        body: JSON.stringify(payload),
     })
         .then(function (resp) {
             return resp.json().then(function (data) {
@@ -218,14 +349,22 @@ function runAutoGeoreferenceWithMetadata() {
 function runAutoGeoreference() {
     showMapLoading('Downloading satellite imagery and matching features...');
 
+    // Collect overlay context for features within the drawn bounds
+    var overlayContext = AutoGeoref.bounds ? collectOverlayContext(AutoGeoref.bounds) : [];
+
+    var payload = {
+        image_id: AppState.imageId,
+        bounds: AutoGeoref.bounds,
+        force_feature_matching: true,
+    };
+    if (overlayContext && overlayContext.length > 0) {
+        payload.overlay_context = overlayContext;
+    }
+
     fetch('/api/auto-georeference', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            image_id: AppState.imageId,
-            bounds: AutoGeoref.bounds,
-            force_feature_matching: true,
-        }),
+        body: JSON.stringify(payload),
     })
         .then(function (resp) {
             return resp.json().then(function (data) {
@@ -306,4 +445,107 @@ function populateGcpsFromAutoResult(data) {
     AppState.isGeoreferenced = false;
     updateGcpTable();
     updateExportButton();
+}
+
+// ============================================================
+// Vector Overlay Context Collection
+// ============================================================
+
+function collectOverlayContext(bounds) {
+    /**
+     * Extract features from loaded vector overlays that fall within
+     * the given bounds. Returns a structured summary suitable for
+     * sending to the AI as additional geographic context.
+     *
+     * @param {object} bounds - {north, south, east, west}
+     * @returns {Array} Array of overlay summaries with features
+     */
+    var results = [];
+    var boundsObj = L.latLngBounds(
+        [bounds.south, bounds.west],
+        [bounds.north, bounds.east]
+    );
+
+    for (var i = 0; i < AppState.vectorOverlays.length; i++) {
+        var entry = AppState.vectorOverlays[i];
+        if (!entry.visible) continue;
+
+        var features = [];
+        entry.layer.eachLayer(function (layer) {
+            // Check if feature geometry intersects the bounds
+            var featureBounds;
+            if (layer.getLatLng) {
+                // Point feature
+                featureBounds = L.latLngBounds(layer.getLatLng(), layer.getLatLng());
+            } else if (layer.getBounds) {
+                featureBounds = layer.getBounds();
+            }
+
+            if (!featureBounds || !boundsObj.intersects(featureBounds)) return;
+
+            var feature = layer.feature;
+            if (!feature) return;
+
+            var summary = {};
+
+            // Extract geometry type and coordinates
+            if (feature.geometry && feature.geometry.type === 'Point') {
+                summary.type = 'point';
+                summary.lon = feature.geometry.coordinates[0];
+                summary.lat = feature.geometry.coordinates[1];
+            } else if (feature.geometry && feature.geometry.type === 'LineString') {
+                summary.type = 'line';
+            } else if (feature.geometry && feature.geometry.type === 'Polygon') {
+                summary.type = 'polygon';
+            } else {
+                summary.type = feature.geometry ? feature.geometry.type : 'unknown';
+            }
+
+            // Extract key properties (prioritize useful identifiers)
+            var props = feature.properties || {};
+            var keys = Object.keys(props);
+            var selectedProps = {};
+            var priorityKeys = [
+                'name', 'NAME', 'label', 'LABEL', 'type', 'TYPE',
+                'id', 'ID', 'status', 'STATUS', 'operator', 'OPERATOR',
+                'well_name', 'WELL_NAME', 'api_number', 'API_NUMBER',
+                'lease_name', 'LEASE_NAME', 'field_name', 'FIELD_NAME',
+            ];
+
+            // First pass: grab priority keys
+            for (var k = 0; k < priorityKeys.length; k++) {
+                if (props[priorityKeys[k]] !== undefined &&
+                    props[priorityKeys[k]] !== null &&
+                    props[priorityKeys[k]] !== '') {
+                    selectedProps[priorityKeys[k]] = String(props[priorityKeys[k]]);
+                }
+            }
+
+            // Second pass: fill up to 4 properties total
+            var propCount = Object.keys(selectedProps).length;
+            if (propCount < 4) {
+                for (var j = 0; j < keys.length && propCount < 4; j++) {
+                    if (!(keys[j] in selectedProps) &&
+                        props[keys[j]] !== null &&
+                        props[keys[j]] !== '') {
+                        selectedProps[keys[j]] = String(props[keys[j]]);
+                        propCount++;
+                    }
+                }
+            }
+
+            summary.properties = selectedProps;
+            features.push(summary);
+        });
+
+        if (features.length > 0) {
+            results.push({
+                name: entry.name,
+                feature_count: features.length,
+                features: features.slice(0, 50),  // Cap at 50 features per overlay
+            });
+        }
+    }
+
+    return results;
 }

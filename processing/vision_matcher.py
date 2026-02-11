@@ -26,7 +26,8 @@ CLAUDE_MODEL = 'claude-sonnet-4-20250514'
 CLAUDE_MAX_TOKENS = 4096
 
 
-def auto_match(tiff_path, reference_image, reference_geo_transform):
+def auto_match(tiff_path, reference_image, reference_geo_transform,
+               overlay_context=None):
     """Run Claude Vision-based landmark matching.
 
     Drop-in replacement for the ORB/SIFT feature_matcher.auto_match().
@@ -36,6 +37,8 @@ def auto_match(tiff_path, reference_image, reference_geo_transform):
         reference_image: numpy RGB array (H x W x 3, uint8) of satellite imagery.
         reference_geo_transform: tuple (origin_lon, origin_lat,
             px_size_lon, px_size_lat).
+        overlay_context: optional list of vector overlay feature summaries
+            to include in the prompt for better landmark identification.
 
     Returns:
         dict with 'gcps' (list of {pixel_x, pixel_y, lat, lon}),
@@ -96,6 +99,7 @@ def auto_match(tiff_path, reference_image, reference_geo_transform):
                 'west': origin_lon,
             },
             api_key,
+            overlay_context=overlay_context,
         )
     except Exception as e:
         return {'error': f'Claude Vision API call failed: {e}'}
@@ -309,8 +313,14 @@ def _encode_image(pil_image, quality=85):
 
 
 def _call_claude_vision(aerial_b64, aerial_media, ref_b64, ref_media,
-                        aerial_dims, ref_dims, ref_bounds, api_key):
+                        aerial_dims, ref_dims, ref_bounds, api_key,
+                        overlay_context=None):
     """Call Claude Vision API with both images and matching prompt.
+
+    Args:
+        overlay_context: optional list of vector overlay feature summaries.
+            If provided, formatted and appended to the prompt as geographic
+            context to help the AI identify landmarks.
 
     Returns the raw response text from Claude.
     """
@@ -433,6 +443,16 @@ def _call_claude_vision(aerial_b64, aerial_media, ref_b64, ref_media,
         },
     ]
 
+    # Add vector overlay context if available (e.g., well locations, pipelines)
+    overlay_text = _format_overlay_context(overlay_context, ref_bounds)
+    if overlay_text:
+        prompt_parts.append({
+            'type': 'text',
+            'text': overlay_text,
+        })
+        print(f'[vision_matcher] Added overlay context to prompt '
+              f'({len(overlay_text)} chars)')
+
     response = client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=CLAUDE_MAX_TOKENS,
@@ -443,6 +463,107 @@ def _call_claude_vision(aerial_b64, aerial_media, ref_b64, ref_media,
     )
 
     return response.content[0].text
+
+
+# ============================================================
+# Vector overlay context formatting
+# ============================================================
+
+
+def _format_overlay_context(overlay_context, ref_bounds):
+    """Format vector overlay data into a concise text block for the prompt.
+
+    Converts the structured overlay feature data from the frontend into
+    a human-readable summary that helps the AI identify landmarks.
+
+    Args:
+        overlay_context: list of overlay dicts from frontend, each with
+            'name', 'feature_count', 'features' (list of feature summaries).
+        ref_bounds: dict with 'north', 'south', 'east', 'west'.
+
+    Returns:
+        A string to include in the prompt, or empty string if no context.
+    """
+    if not overlay_context:
+        return ''
+
+    lines = [
+        'ADDITIONAL GEOGRAPHIC CONTEXT from vector overlays loaded by the user:',
+        'The following known features exist within or near the search area. '
+        'These may help you identify landmarks in both images.',
+        '',
+    ]
+
+    total_features = 0
+
+    for overlay in overlay_context:
+        name = overlay.get('name', 'Unknown')
+        features = overlay.get('features', [])
+        if not features:
+            continue
+
+        lines.append(f'Overlay: "{name}" ({len(features)} features in view)')
+
+        # Group by geometry type
+        points = [f for f in features if f.get('type') == 'point']
+        line_features = [f for f in features if f.get('type') == 'line']
+        polygon_features = [f for f in features if f.get('type') == 'polygon']
+
+        if points:
+            lines.append(f'  Point features ({len(points)}):')
+            for pt in points[:30]:
+                props = pt.get('properties', {})
+                label = (props.get('name') or props.get('NAME')
+                         or props.get('label') or props.get('LABEL')
+                         or props.get('well_name') or props.get('WELL_NAME')
+                         or '')
+                lat = pt.get('lat', '?')
+                lon = pt.get('lon', '?')
+                if label:
+                    lines.append(f'    - "{label}" at ({lat}, {lon})')
+                else:
+                    first_val = next(iter(props.values()), None) if props else None
+                    if first_val:
+                        lines.append(f'    - [{first_val}] at ({lat}, {lon})')
+                    else:
+                        lines.append(f'    - Point at ({lat}, {lon})')
+                total_features += 1
+            if len(points) > 30:
+                lines.append(f'    ... and {len(points) - 30} more points')
+
+        if line_features:
+            lines.append(f'  Line features ({len(line_features)}):')
+            for lf in line_features[:10]:
+                props = lf.get('properties', {})
+                label = (props.get('name') or props.get('NAME')
+                         or next(iter(props.values()), 'unnamed'))
+                lines.append(f'    - {label}')
+                total_features += 1
+
+        if polygon_features:
+            lines.append(f'  Polygon/area features ({len(polygon_features)}):')
+            for pf in polygon_features[:10]:
+                props = pf.get('properties', {})
+                label = (props.get('name') or props.get('NAME')
+                         or next(iter(props.values()), 'unnamed'))
+                lines.append(f'    - {label}')
+                total_features += 1
+
+        lines.append('')
+
+    if total_features == 0:
+        return ''
+
+    lines.append(
+        'Use these known feature locations as anchoring hints when identifying '
+        'landmarks. Well pads, roads, canals, and other infrastructure from '
+        'these overlays may be visible as distinctive features in both images. '
+        'A point feature at a specific lat/lon should help you locate the '
+        'corresponding pixel position in the satellite image using the '
+        'geographic bounds provided above.'
+    )
+
+    return '\n'.join(lines)
 
 
 # ============================================================
