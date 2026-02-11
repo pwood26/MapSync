@@ -32,15 +32,12 @@ body {
 }
 
 .logo-container {
-    background: #ffffff;
-    padding: 6px 14px;
-    border-radius: 6px;
     display: flex;
     align-items: center;
 }
 
 .logo-img {
-    height: 40px;
+    height: 44px;
     width: auto;
 }
 
