@@ -95,14 +95,16 @@ function handleFileUpload(e) {
             if (placeholder) placeholder.style.display = 'none';
             AppState.aerialViewer = initAerialViewer('aerial-viewer', data.preview_url);
 
-            // Enable the Add GCP, Auto-Georeference, and AI Match buttons
+            // Enable the Add GCP and Auto-Georeference buttons
             var addGcpEl = document.getElementById('addGcpBtn');
             var autoGeorefEl = document.getElementById('autoGeorefBtn');
-            var aiMatchEl = document.getElementById('aiMatchViewBtn');
             var rotCtrl = document.getElementById('rotationControls');
             if (addGcpEl) addGcpEl.disabled = false;
-            if (autoGeorefEl) autoGeorefEl.disabled = false;
-            if (aiMatchEl) aiMatchEl.disabled = false;
+            if (autoGeorefEl) {
+                // Only enable Auto-Georeference if metadata is available
+                var hasMeta = data.metadata && (data.metadata.has_georeference || data.metadata.has_gps);
+                autoGeorefEl.disabled = !hasMeta;
+            }
             if (rotCtrl) rotCtrl.style.display = 'flex';
 
             // Display metadata info if available
@@ -266,7 +268,7 @@ function displayMetadataInfo(metadata) {
         }
     }
 
-    html += '<br><small class="metadata-hint">Click "Auto-Georeference" for AI-guided precise placement</small>';
+    html += '<br><small class="metadata-hint">Click "Auto-Georeference" to place GCPs from metadata, then fine-tune</small>';
     html += '</div>';
 
     infoDiv.innerHTML = html;

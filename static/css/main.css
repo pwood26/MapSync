@@ -943,32 +943,6 @@ body {
     cursor: not-allowed;
 }
 
-.auto-georef-btn.active {
-    background: #C8922A;
-    color: #FFFFFF;
-    font-weight: 600;
-}
-
-/* AI Match This View button */
-.ai-match-view-btn {
-    background: #1B2A4A;
-    color: #e0e0e0;
-    border: 1px solid #15803D;
-    padding: 6px 16px;
-    cursor: pointer;
-    font-size: 13px;
-    transition: background 0.2s;
-}
-
-.ai-match-view-btn:hover:not(:disabled) {
-    background: #15803D;
-    color: #FFFFFF;
-}
-
-.ai-match-view-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
 
 /* ============================================================
    Preview & Adjust Styles

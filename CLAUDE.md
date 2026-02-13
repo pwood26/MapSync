@@ -18,7 +18,6 @@ processing/
   tiff_handler.py         # TIFF validation, PNG preview, metadata extraction
   georeferencer.py        # GDAL georeferencing pipeline (gdal_translate + gdalwarp TPS)
   metadata_georeferencer.py  # Generate GCPs from metadata (center+GSD, corners)
-  auto_georeferencer.py   # AI feature matching pipeline (tile download + matching)
   worldfile_parser.py     # Parse ESRI World Files (.tfw)
   footprint_parser.py     # Parse GeoJSON footprint files
   zip_handler.py          # Extract USGS ZIP packages
@@ -34,7 +33,7 @@ static/
     map-viewer.js         # Leaflet map, GCP clicks, vector overlays, search
     gcp-manager.js        # GCP table management, error display
     export-handler.js     # Georeferencing trigger, results modal, KMZ download
-    auto-georef.js        # Auto-georef with metadata guidance
+    auto-georef.js        # Auto-georef from USGS metadata (places GCPs for user to fine-tune)
   uploads/                # Temp TIFF storage (gitignored)
   previews/               # PNG previews (gitignored)
   exports/                # Georeferenced TIFFs & KMZ (gitignored)
@@ -71,11 +70,10 @@ python3 app.py
 ## Architecture Notes
 
 - **Preview/Original pattern:** Original TIFF stays server-side; browser works with a scaled PNG preview. Pixel coordinates are scaled back to original dimensions using `scale_factor`.
-- **Metadata-guided AI georeferencing:**
+- **Metadata-based auto-georeferencing:**
   - Extracts location metadata from GDAL geotransform, USGS world files (.tfw), GeoJSON footprints, or EXIF GPS
-  - Uses metadata to auto-generate bounding box for AI feature matching
-  - AI feature matching (SIFT/ORB) provides sub-meter precision
-  - Fallback to manual bounding box if no metadata available
+  - Places corner + center GCPs directly from metadata coordinates
+  - User fine-tunes GCP positions manually for precision
   - Compatible with USGS download packages (TIFF + TFW + footprint GeoJSON)
 - **Two-phase GCP placement:** User clicks aerial photo first (captures pixel X/Y), then clicks satellite map (captures lat/lon). Minimum 5 GCPs required for export.
 - **GDAL subprocess calls:** No Python GDAL bindings — uses `gdal_translate` (embed GCPs), `gdalwarp` (thin-plate spline transform), `gdalinfo` (read bounds), `ogr2ogr`/`ogrinfo` (vector conversion).

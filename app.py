@@ -6,7 +6,6 @@ from processing.tiff_handler import validate_tiff, convert_to_preview, extract_m
 from processing.georeferencer import run_georeferencing
 from processing.exporter import generate_kmz
 from processing.vector_handler import convert_to_geojson, SUPPORTED_EXTENSIONS
-from processing.auto_georeferencer import run_auto_georeferencing
 from processing.metadata_georeferencer import georeference_from_metadata
 
 app = Flask(__name__)
@@ -180,15 +179,16 @@ def upload_overlay():
 
 @app.route('/api/auto-georeference', methods=['POST'])
 def auto_georeference():
+    """Generate GCPs directly from USGS metadata (world file, footprint, GDAL geotransform).
+
+    No AI matching — just uses the metadata coordinates to place corner + center
+    GCPs that the user can then fine-tune manually.
+    """
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No JSON data provided'}), 400
 
     image_id = data.get('image_id')
-    bounds = data.get('bounds')
-    force_feature_matching = data.get('force_feature_matching', False)
-    overlay_context = data.get('overlay_context')  # Vector overlay features for AI context
-
     if not image_id:
         return jsonify({'error': 'Missing image_id'}), 400
 
@@ -196,83 +196,58 @@ def auto_georeference():
     if not os.path.exists(tiff_path):
         return jsonify({'error': 'Image not found'}), 404
 
-    # Extract metadata to determine bounding box automatically
+    # Extract metadata
     metadata = extract_metadata(tiff_path)
 
     print(f'[auto-georeference] image_id={image_id}, '
-          f'force_feature_matching={force_feature_matching}, '
-          f'has_bounds={bounds is not None}, '
           f'metadata: has_georef={metadata.get("has_georeference")}, '
           f'has_gps={metadata.get("has_gps")}, '
           f'corners={metadata.get("corners") is not None}, '
           f'source={metadata.get("source")}')
 
-    # If metadata provides location, use it to auto-generate bounding box for AI matching
-    if not force_feature_matching and metadata.get('corners'):
-        # Already georeferenced - use metadata corners as bounding box for AI refinement
-        bounds = metadata['corners']
-    elif not force_feature_matching and metadata.get('has_gps') and metadata.get('center_lat'):
-        # GPS center point - estimate bounds for AI matching
-        from PIL import Image
+    if not metadata.get('has_georeference') and not metadata.get('has_gps'):
+        return jsonify({
+            'error': (
+                'No location metadata found in this image. '
+                'Upload a USGS ZIP package (with .tfw world file or footprint GeoJSON) '
+                'or use manual GCP placement.'
+            )
+        }), 400
+
+    # Get image dimensions
+    from PIL import Image
+    try:
         with Image.open(tiff_path) as img:
             width, height = img.size
+    except Exception as e:
+        return jsonify({'error': f'Could not read image dimensions: {e}'}), 500
 
-        # Estimate coverage area (conservative estimate: ~0.05 degrees if no GSD)
-        if metadata.get('gsd'):
-            from processing.metadata_georeferencer import estimate_gsd_from_bounds
-            import math
+    # Generate GCPs from metadata
+    result = georeference_from_metadata(metadata, width, height)
 
-            # Calculate approximate coverage from center + GSD
-            half_width_px = width / 2
-            half_height_px = height / 2
-            half_width_m = half_width_px * metadata['gsd']
-            half_height_m = half_height_px * metadata['gsd']
+    if result.get('error'):
+        print(f'[auto-georeference] Failed: {result["error"]}')
+        return jsonify({'error': result['error']}), 422
 
-            # Convert to degrees
-            center_lat = metadata['center_lat']
-            meters_per_degree_lat = 111111
-            meters_per_degree_lon = 111111 * math.cos(math.radians(center_lat))
+    gcps = result['gcps']
+    print(f'[auto-georeference] Generated {len(gcps)} GCPs from {result["method"]}')
 
-            lat_span = half_height_m / meters_per_degree_lat
-            lon_span = half_width_m / meters_per_degree_lon
-
-            bounds = {
-                'north': center_lat + lat_span,
-                'south': center_lat - lat_span,
-                'east': metadata['center_lon'] + lon_span,
-                'west': metadata['center_lon'] - lon_span,
+    return jsonify({
+        'success': True,
+        'gcps': [
+            {
+                'pixel_x': g['pixel_x'],
+                'pixel_y': g['pixel_y'],
+                'lat': g['lat'],
+                'lon': g['lon'],
             }
-        else:
-            # No GSD - use conservative default (~5km span)
-            span = 0.05
-            bounds = {
-                'north': metadata['center_lat'] + span,
-                'south': metadata['center_lat'] - span,
-                'east': metadata['center_lon'] + span,
-                'west': metadata['center_lon'] - span,
-            }
-
-    # If we have bounds (from metadata or user), run AI feature matching
-    if bounds:
-        print(f'[auto-georeference] Running with bounds: '
-              f'N={bounds.get("north")}, S={bounds.get("south")}, '
-              f'E={bounds.get("east")}, W={bounds.get("west")}')
-
-        result = run_auto_georeferencing(image_id, tiff_path, bounds,
-                                        overlay_context=overlay_context)
-
-        if result.get('error'):
-            print(f'[auto-georeference] Failed: {result["error"]}')
-            return jsonify(result), 422
-
-        # Indicate whether metadata helped or if purely manual
-        result['method'] = 'ai_feature_matching'
-        result['used_metadata'] = metadata.get('has_georeference') or metadata.get('has_gps')
-        result['metadata_source'] = metadata.get('source') if result['used_metadata'] else None
-        return jsonify(result)
-
-    # No metadata and no user-provided bounds
-    return jsonify({'error': 'No location metadata found. Please draw a bounding box on the map.'}), 400
+            for g in gcps
+        ],
+        'match_count': len(gcps),
+        'confidence': 1.0,
+        'method': 'metadata',
+        'metadata_source': metadata.get('source'),
+    })
 
 
 @app.route('/api/georeference', methods=['POST'])
