@@ -200,7 +200,7 @@ function updateExportButton() {
     if (!counter) return;
     if (AppState.imageId) {
         counter.textContent = AppState.gcps.length + '/5 minimum GCPs';
-        counter.style.color = AppState.gcps.length >= 5 ? '#4ecca3' : '#e94560';
+        counter.style.color = AppState.gcps.length >= 5 ? '#15803D' : '#B91C1C';
     } else {
         counter.textContent = '';
     }

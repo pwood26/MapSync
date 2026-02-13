@@ -163,8 +163,8 @@ function searchNominatim(query, map) {
 // ============================================================
 
 var OVERLAY_COLORS = [
-    '#ff6b6b', '#feca57', '#48dbfb', '#ff9ff3', '#54a0ff',
-    '#5f27cd', '#01a3a4', '#f368e0', '#ff9f43', '#00d2d3',
+    '#C8922A', '#B91C1C', '#4A7C9B', '#15803D', '#54a0ff',
+    '#6B7280', '#01a3a4', '#8B5CF6', '#D97706', '#0891B2',
 ];
 
 function addVectorOverlay(overlayId, name, geojson) {

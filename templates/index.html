@@ -12,9 +12,36 @@
     <!-- OpenSeadragon -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.1/openseadragon.min.js"></script>
 
+    <!-- Google Fonts: Inter + JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
     <link rel="stylesheet" href="/static/css/main.css">
 </head>
 <body>
+    <!-- Password Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-card">
+            <div class="login-logo">
+                <img src="/static/images/lpa-logo.svg" alt="LPA" class="login-logo-img">
+            </div>
+            <h1 class="login-title">MapSync</h1>
+            <p class="login-subtitle">Aerial Photo Georeferencing Tool</p>
+            <div class="login-lock-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#C8922A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+            </div>
+            <label class="login-label" for="passwordInput">Enter Password to Access</label>
+            <input type="password" id="passwordInput" class="login-input" placeholder="Enter password" autocomplete="off">
+            <p id="loginError" class="login-error" style="display: none;">Incorrect password. Please try again.</p>
+            <button id="loginBtn" class="login-btn">Unlock Application</button>
+            <p class="login-footer">Secure access required</p>
+        </div>
+    </div>
+
     <!-- Header -->
     <header id="header">
         <div class="header-left">
@@ -42,16 +69,6 @@
             <button id="exportBtn" class="export-btn" disabled>Export GeoTIFF</button>
         </div>
     </header>
-
-    <!-- Disclaimer -->
-    <div class="disclaimer-bar">
-        <div class="disclaimer-inner">
-            <p class="disclaimer-text">
-                <span class="disclaimer-label">DISCLAIMER:</span>
-                This tool uses AI to georeference historical aerial photographs. It is provided for informational purposes only. Please contact <a href="mailto:pwood@joneswalker.com" class="disclaimer-link">Phil Wood</a> at <a href="mailto:pwood@joneswalker.com" class="disclaimer-link">pwood@joneswalker.com</a> with any questions about this tool.
-            </p>
-        </div>
-    </div>
 
     <!-- Main dual-pane area -->
     <div id="main-container">
@@ -111,7 +128,7 @@
 
                 <!-- Opacity -->
                 <div class="adjust-section">
-                    <span class="adjust-section-label">Overlay Opacity</span>
+                    <span class="adjust-section-label">Photo Opacity</span>
                     <div class="adjust-opacity-row">
                         <input type="range" id="adjustOpacity" min="0" max="100" value="65" step="5">
                         <span id="adjustOpacityVal" class="adjust-opacity-val">65%</span>
@@ -120,16 +137,16 @@
 
                 <!-- Nudge D-pad -->
                 <div class="adjust-section">
-                    <span class="adjust-section-label">Nudge Position</span>
+                    <span class="adjust-section-label">Nudge Satellite</span>
                     <div class="nudge-pad">
                         <div></div>
-                        <button id="nudgeN" title="Shift north">&#9650;</button>
+                        <button id="nudgeN" title="Move satellite north">&#9650;</button>
                         <div></div>
-                        <button id="nudgeW" title="Shift west">&#9664;</button>
+                        <button id="nudgeW" title="Move satellite west">&#9664;</button>
                         <button class="nudge-center" disabled>+</button>
-                        <button id="nudgeE" title="Shift east">&#9654;</button>
+                        <button id="nudgeE" title="Move satellite east">&#9654;</button>
                         <div></div>
-                        <button id="nudgeS" title="Shift south">&#9660;</button>
+                        <button id="nudgeS" title="Move satellite south">&#9660;</button>
                         <div></div>
                     </div>
                 </div>
@@ -138,14 +155,14 @@
                 <div class="adjust-section">
                     <span class="adjust-section-label">Scale</span>
                     <div class="scale-controls">
-                        <button id="scaleDn" title="Shrink 2%">&#8722; Smaller</button>
-                        <button id="scaleUp" title="Grow 2%">&#43; Larger</button>
+                        <button id="scaleDn" title="Zoom out">&#8722; Zoom Out</button>
+                        <button id="scaleUp" title="Zoom in">&#43; Zoom In</button>
                     </div>
                 </div>
 
                 <!-- Rotation -->
                 <div class="adjust-section">
-                    <span class="adjust-section-label">Rotation (for KMZ)</span>
+                    <span class="adjust-section-label">Rotate Map</span>
                     <div class="adjust-rotation-row">
                         <input type="number" id="adjustRotation" min="-180" max="180" value="0" step="0.5">
                         <span class="adjust-rotation-unit">degrees</span>
@@ -154,7 +171,7 @@
 
                 <!-- Hint -->
                 <div class="adjust-hint">
-                    <em>Drag the image</em> on the map to reposition,<br>
+                    <em>Drag the satellite map</em> to align with the aerial photo,<br>
                     or use the controls above for fine adjustment.
                 </div>
 
@@ -205,6 +222,36 @@
         <div class="spinner"></div>
         <p id="loadingText">Processing...</p>
     </div>
+
+    <script>
+    (function() {
+        var PASSWORD = 'mapsync2024';
+        var loginScreen = document.getElementById('loginScreen');
+        var passwordInput = document.getElementById('passwordInput');
+        var loginBtn = document.getElementById('loginBtn');
+        var loginError = document.getElementById('loginError');
+
+        if (sessionStorage.getItem('mapsync_auth') === 'true') {
+            loginScreen.style.display = 'none';
+        }
+
+        loginBtn.addEventListener('click', tryLogin);
+        passwordInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') tryLogin();
+        });
+
+        function tryLogin() {
+            if (passwordInput.value === PASSWORD) {
+                sessionStorage.setItem('mapsync_auth', 'true');
+                loginScreen.style.display = 'none';
+            } else {
+                loginError.style.display = 'block';
+                passwordInput.value = '';
+                passwordInput.focus();
+            }
+        }
+    })();
+    </script>
 
     <script src="/static/js/app.js"></script>
     <script src="/static/js/aerial-viewer.js"></script>

@@ -106,11 +106,11 @@ function updateGcpErrors(residuals) {
             var error = residuals[i].error_m;
             errorCell.textContent = error.toFixed(1) + 'm';
             if (error > 100) {
-                errorCell.style.color = '#e94560';
+                errorCell.style.color = '#B91C1C';
             } else if (error > 50) {
-                errorCell.style.color = '#f0a500';
+                errorCell.style.color = '#C8922A';
             } else {
-                errorCell.style.color = '#4ecca3';
+                errorCell.style.color = '#15803D';
             }
         }
     }

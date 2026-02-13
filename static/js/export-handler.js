@@ -62,7 +62,7 @@ function showResultsModal(result) {
     var perPointHtml = '';
     for (var i = 0; i < residuals.length; i++) {
         var r = residuals[i];
-        var color = r.error_m > 100 ? '#e94560' : r.error_m > 50 ? '#f0a500' : '#4ecca3';
+        var color = r.error_m > 100 ? '#B91C1C' : r.error_m > 50 ? '#C8922A' : '#15803D';
         perPointHtml +=
             '<span style="color:' + color + '">GCP ' + (i + 1) + ': ' + r.error_m.toFixed(1) + 'm</span>  ';
     }

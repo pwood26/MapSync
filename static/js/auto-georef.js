@@ -103,7 +103,7 @@ function onAiMatchViewClick() {
     }
     AutoGeoref.rect = L.rectangle(
         [[bounds.south, bounds.west], [bounds.north, bounds.east]],
-        { color: '#4ecca3', weight: 2, dashArray: '6,4', fillOpacity: 0.08 }
+        { color: '#15803D', weight: 2, dashArray: '6,4', fillOpacity: 0.08 }
     ).addTo(AppState.mapInstance);
 
     AutoGeoref.bounds = bounds;
@@ -192,7 +192,7 @@ function startBboxDrawing() {
         AutoGeoref.startLatLng = e.latlng;
         AutoGeoref.rect = L.rectangle(
             [e.latlng, e.latlng],
-            { color: '#48dbfb', weight: 2, dashArray: '6,4', fillOpacity: 0.1 }
+            { color: '#C8922A', weight: 2, dashArray: '6,4', fillOpacity: 0.1 }
         ).addTo(map);
     };
 

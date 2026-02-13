@@ -94,7 +94,11 @@ python3 app.py
 
 ## Style Conventions
 
-- Dark theme UI with accent colors: `#4ecca3` (green/success), `#e94560` (red/alert), `#48dbfb` (cyan/info)
-- Error color coding: green (<50m), yellow (50-100m), red (>100m)
+- **LPA Brand Identity** — Professional oil & gas engineering aesthetic, flat and utilitarian
+- **Colors:** Primary Navy `#1B2A4A`, Accent Gold `#C8922A` (use sparingly), Error Red `#B91C1C`, Success Green `#15803D`, Mid Gray `#6B7280`, Body Text `#3A3F47`
+- **Typography:** Inter (headings/body), JetBrains Mono (data fields/coordinates)
+- **UI:** Square corners on buttons/cards (0px border-radius), 4px on input fields only. No gradients, no drop shadows. Gold rule dividers (`1px solid #C8922A`)
+- Error color coding: green `#15803D` (<50m), gold `#C8922A` (50-100m), red `#B91C1C` (>100m)
+- **Password protection:** Client-side login screen gates access (password: `mapsync2024`, sessionStorage-based)
 - No frontend build tools or frameworks — plain JS modules loaded via script tags
 - Backend uses Flask's built-in error handling; processing functions return dicts with `success` boolean
