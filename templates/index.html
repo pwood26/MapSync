@@ -23,16 +23,16 @@
     <!-- Password Login Screen -->
     <div id="loginScreen" class="login-screen">
         <div class="login-card">
-            <div class="login-logo">
-                <img src="/static/images/lpa-logo.svg" alt="LPA" class="login-logo-img">
-            </div>
+            <div class="login-logo-badge">LPA</div>
             <h1 class="login-title">MapSync</h1>
             <p class="login-subtitle">Aerial Photo Georeferencing Tool</p>
             <div class="login-lock-icon">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#C8922A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                </svg>
+                <div class="login-lock-circle">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#C8922A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                </div>
             </div>
             <label class="login-label" for="passwordInput">Enter Password to Access</label>
             <input type="password" id="passwordInput" class="login-input" placeholder="Enter password" autocomplete="off">
@@ -60,7 +60,7 @@
                 <input type="file" id="fileInput" accept=".tif,.tiff,.zip" hidden>
             </label>
             <label class="overlay-upload-btn" id="overlayUploadBtn">
-                Add Overlay
+                Upload Shapefile
                 <input type="file" id="overlayFileInput"
                        accept=".zip,.kmz,.kml,.geojson,.json,.gpx,.shp" hidden>
             </label>
