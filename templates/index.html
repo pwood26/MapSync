@@ -64,7 +64,6 @@
                 <input type="file" id="overlayFileInput"
                        accept=".zip,.kmz,.kml,.geojson,.json,.gpx,.shp" hidden>
             </label>
-            <button id="autoGeorefBtn" class="auto-georef-btn" disabled>Auto-Georeference</button>
             <button id="exportBtn" class="export-btn" disabled>Export GeoTIFF</button>
         </div>
     </header>
@@ -136,26 +135,26 @@
 
                 <!-- Nudge D-pad -->
                 <div class="adjust-section">
-                    <span class="adjust-section-label">Nudge Satellite</span>
+                    <span class="adjust-section-label">Nudge Photo</span>
                     <div class="nudge-pad">
                         <div></div>
-                        <button id="nudgeN" title="Move satellite north">&#9650;</button>
+                        <button id="nudgeN" title="Move photo north">&#9650;</button>
                         <div></div>
-                        <button id="nudgeW" title="Move satellite west">&#9664;</button>
+                        <button id="nudgeW" title="Move photo west">&#9664;</button>
                         <button class="nudge-center" disabled>+</button>
-                        <button id="nudgeE" title="Move satellite east">&#9654;</button>
+                        <button id="nudgeE" title="Move photo east">&#9654;</button>
                         <div></div>
-                        <button id="nudgeS" title="Move satellite south">&#9660;</button>
+                        <button id="nudgeS" title="Move photo south">&#9660;</button>
                         <div></div>
                     </div>
                 </div>
 
                 <!-- Scale -->
                 <div class="adjust-section">
-                    <span class="adjust-section-label">Scale</span>
+                    <span class="adjust-section-label">Scale Photo</span>
                     <div class="scale-controls">
-                        <button id="scaleDn" title="Zoom out">&#8722; Zoom Out</button>
-                        <button id="scaleUp" title="Zoom in">&#43; Zoom In</button>
+                        <button id="scaleDn" title="Shrink photo">&#8722; Shrink</button>
+                        <button id="scaleUp" title="Grow photo">&#43; Grow</button>
                     </div>
                 </div>
 
@@ -170,8 +169,8 @@
 
                 <!-- Hint -->
                 <div class="adjust-hint">
-                    <em>Drag the satellite map</em> to align with the aerial photo,<br>
-                    or use the controls above for fine adjustment.
+                    Use the controls to nudge and scale the aerial photo overlay.<br>
+                    Zoom the map with scroll wheel to compare details.
                 </div>
 
                 <!-- Actions -->

@@ -1,20 +1,64 @@
 // MapSync - Preview & Adjust
-// Overlays the aerial photo on top of the Leaflet map as a static,
-// semi-transparent image.  The user drags / zooms / rotates the satellite
-// map underneath until it aligns with the aerial, then exports.
+// Overlays the aerial photo as a Leaflet image overlay so it zooms and pans
+// together with the satellite tiles.  The user nudges the overlay bounds,
+// adjusts opacity/rotation, then exports.
 
 var PreviewAdjust = {
-    aerialOverlayEl: null,   // <img> element overlaid on the map pane
+    imageOverlay: null,      // L.imageOverlay on the map
     active: false,
     opacity: 0.65,
     rotation: 0,             // CSS rotation applied to the Leaflet map pane
     originalBounds: null,    // {north, south, east, west} from georeferencing
+    currentBounds: null,     // Current L.LatLngBounds of the overlay (after nudges)
     originalCenter: null,    // L.LatLng saved when entering adjust mode
     originalZoom: null,      // Zoom level saved when entering adjust mode
     savedZoomSnap: null,     // Original map zoomSnap (to restore later)
     savedZoomDelta: null,    // Original map zoomDelta
-    aerialRotation: 0,       // OSD rotation applied to the aerial overlay img
+    aerialRotation: 0,       // OSD rotation applied to the aerial overlay
 };
+
+
+// ============================================================
+// Full-screen mode helpers
+// ============================================================
+
+function _enterFullScreen() {
+    var header = document.getElementById('header');
+    var aerialPane = document.getElementById('aerial-pane');
+    var gcpPanel = document.getElementById('gcp-panel');
+    var metadataInfo = document.getElementById('metadataInfo');
+    var mapPane = document.getElementById('map-pane');
+    var mainContainer = document.getElementById('main-container');
+
+    if (header) header.style.display = 'none';
+    if (aerialPane) aerialPane.style.display = 'none';
+    if (gcpPanel) gcpPanel.style.display = 'none';
+    if (metadataInfo) metadataInfo.style.display = 'none';
+
+    // Make map pane fill the entire viewport
+    if (mainContainer) mainContainer.style.flex = '1';
+    if (mapPane) {
+        mapPane.style.flex = '1';
+        mapPane.style.width = '100%';
+    }
+}
+
+function _exitFullScreen() {
+    var header = document.getElementById('header');
+    var aerialPane = document.getElementById('aerial-pane');
+    var gcpPanel = document.getElementById('gcp-panel');
+    var mapPane = document.getElementById('map-pane');
+
+    if (header) header.style.display = '';
+    if (aerialPane) aerialPane.style.display = '';
+    if (gcpPanel) gcpPanel.style.display = '';
+
+    // Restore map pane sizing
+    if (mapPane) {
+        mapPane.style.flex = '';
+        mapPane.style.width = '';
+    }
+}
 
 
 // ============================================================
@@ -22,13 +66,6 @@ var PreviewAdjust = {
 // ============================================================
 
 function showPreviewOverlay(imageId, bounds) {
-    /**
-     * Show the aerial photo as a fixed overlay on top of the Leaflet map.
-     * The user then manipulates the map underneath to align.
-     *
-     * @param {string} imageId - The image ID
-     * @param {object} bounds  - {north, south, east, west} from georeferencing
-     */
     var map = AppState.mapInstance;
 
     PreviewAdjust.originalBounds = {
@@ -41,50 +78,54 @@ function showPreviewOverlay(imageId, bounds) {
     PreviewAdjust.opacity = 0.65;
     PreviewAdjust.active = true;
 
-    // Fit the map to the georeferenced bounds first so the satellite is
-    // roughly aligned before we overlay the aerial photo.
-    var llBounds = L.latLngBounds(
-        [bounds.south, bounds.west],
-        [bounds.north, bounds.east]
-    );
-    map.fitBounds(llBounds, { padding: [40, 40] });
+    // Enter full-screen mode
+    _enterFullScreen();
 
-    // Enable fractional zoom for precise alignment
-    PreviewAdjust.savedZoomSnap = map.options.zoomSnap;
-    PreviewAdjust.savedZoomDelta = map.options.zoomDelta;
-    map.options.zoomSnap = 0;
-    map.options.zoomDelta = 0.25;
-
-    // Save the fitted view so Reset can restore it
-    // (use timeout to let fitBounds settle)
+    // Invalidate map size after layout change
     setTimeout(function () {
-        PreviewAdjust.originalCenter = map.getCenter();
-        PreviewAdjust.originalZoom = map.getZoom();
-    }, 350);
+        map.invalidateSize();
 
-    // Create the aerial overlay <img> on top of the map
-    _createAerialOverlay();
+        // Fit the map to the georeferenced bounds
+        var llBounds = L.latLngBounds(
+            [bounds.south, bounds.west],
+            [bounds.north, bounds.east]
+        );
+        map.fitBounds(llBounds, { padding: [60, 60] });
 
-    // Show the adjustment controls panel
-    _showAdjustPanel();
+        // Enable fractional zoom for precise alignment
+        PreviewAdjust.savedZoomSnap = map.options.zoomSnap;
+        PreviewAdjust.savedZoomDelta = map.options.zoomDelta;
+        map.options.zoomSnap = 0;
+        map.options.zoomDelta = 0.25;
+
+        // Save the fitted view so Reset can restore it
+        setTimeout(function () {
+            PreviewAdjust.originalCenter = map.getCenter();
+            PreviewAdjust.originalZoom = map.getZoom();
+        }, 350);
+
+        // Create the aerial overlay as a Leaflet image overlay
+        _createAerialOverlay(bounds);
+
+        // Show the adjustment controls panel
+        _showAdjustPanel();
+    }, 50);
 }
 
 
 function removePreviewOverlay() {
-    /**
-     * Remove the aerial overlay and clean up all preview state.
-     */
-    // Remove aerial overlay element
-    if (PreviewAdjust.aerialOverlayEl && PreviewAdjust.aerialOverlayEl.parentNode) {
-        PreviewAdjust.aerialOverlayEl.parentNode.removeChild(PreviewAdjust.aerialOverlayEl);
+    var map = AppState.mapInstance;
+
+    // Remove image overlay from map
+    if (PreviewAdjust.imageOverlay) {
+        map.removeLayer(PreviewAdjust.imageOverlay);
+        PreviewAdjust.imageOverlay = null;
     }
-    PreviewAdjust.aerialOverlayEl = null;
 
     // Clear CSS rotation from the map pane
     _setMapRotation(0);
 
     // Restore original zoom behaviour
-    var map = AppState.mapInstance;
     if (PreviewAdjust.savedZoomSnap !== null) {
         map.options.zoomSnap = PreviewAdjust.savedZoomSnap;
         map.options.zoomDelta = PreviewAdjust.savedZoomDelta;
@@ -92,88 +133,32 @@ function removePreviewOverlay() {
 
     PreviewAdjust.active = false;
     PreviewAdjust.rotation = 0;
+    PreviewAdjust.currentBounds = null;
 
     // Hide adjustment panel
     var panel = document.getElementById('adjustPanel');
     if (panel) panel.style.display = 'none';
+
+    // Exit full-screen mode
+    _exitFullScreen();
+
+    // Invalidate map size after layout change
+    setTimeout(function () {
+        map.invalidateSize();
+    }, 50);
 }
 
 
 function getAdjustedBounds() {
-    /**
-     * Compute the geographic bounds that correspond to the aerial image
-     * as currently displayed over the map.
-     *
-     * The image uses object-fit: contain, so we calculate its rendered
-     * rectangle, optionally account for CSS rotation, and convert the
-     * four corners to lat/lng via Leaflet's containerPointToLatLng.
-     *
-     * @returns {object} {north, south, east, west}
-     */
-    var map = AppState.mapInstance;
-    var container = map.getContainer();
-    var containerW = container.clientWidth;
-    var containerH = container.clientHeight;
-
-    // Calculate the rendered image rectangle (object-fit: contain)
-    var imgEl = PreviewAdjust.aerialOverlayEl;
-    if (!imgEl) return PreviewAdjust.originalBounds;
-
-    var imgNatW = imgEl.naturalWidth || 1;
-    var imgNatH = imgEl.naturalHeight || 1;
-    var imgAspect = imgNatW / imgNatH;
-    var containerAspect = containerW / containerH;
-
-    var renderW, renderH, offsetX, offsetY;
-    if (imgAspect > containerAspect) {
-        // Image wider than container → letterbox top/bottom
-        renderW = containerW;
-        renderH = containerW / imgAspect;
-        offsetX = 0;
-        offsetY = (containerH - renderH) / 2;
-    } else {
-        // Image taller than container → letterbox left/right
-        renderH = containerH;
-        renderW = containerH * imgAspect;
-        offsetX = (containerW - renderW) / 2;
-        offsetY = 0;
+    if (PreviewAdjust.currentBounds) {
+        return {
+            north: PreviewAdjust.currentBounds.getNorth(),
+            south: PreviewAdjust.currentBounds.getSouth(),
+            east: PreviewAdjust.currentBounds.getEast(),
+            west: PreviewAdjust.currentBounds.getWest(),
+        };
     }
-
-    // Four corners of the rendered aerial image in container-pixel coords
-    var corners = [
-        { x: offsetX,            y: offsetY },              // top-left
-        { x: offsetX + renderW,  y: offsetY },              // top-right
-        { x: offsetX,            y: offsetY + renderH },    // bottom-left
-        { x: offsetX + renderW,  y: offsetY + renderH },    // bottom-right
-    ];
-
-    // If the map pane is CSS-rotated, transform the corners through the
-    // inverse rotation so Leaflet's containerPointToLatLng gives correct
-    // geographic positions.
-    var rot = PreviewAdjust.rotation;
-    if (rot !== 0) {
-        var cx = containerW / 2;
-        var cy = containerH / 2;
-        for (var i = 0; i < corners.length; i++) {
-            corners[i] = _rotatePoint(corners[i].x, corners[i].y, cx, cy, -rot);
-        }
-    }
-
-    // Convert to geographic coordinates
-    var lats = [];
-    var lngs = [];
-    for (var j = 0; j < corners.length; j++) {
-        var ll = map.containerPointToLatLng(L.point(corners[j].x, corners[j].y));
-        lats.push(ll.lat);
-        lngs.push(ll.lng);
-    }
-
-    return {
-        north: Math.max.apply(null, lats),
-        south: Math.min.apply(null, lats),
-        east:  Math.max.apply(null, lngs),
-        west:  Math.min.apply(null, lngs),
-    };
+    return PreviewAdjust.originalBounds;
 }
 
 
@@ -183,39 +168,44 @@ function getAdjustedRotation() {
 
 
 // ============================================================
-// Aerial overlay creation
+// Aerial overlay creation (Leaflet image overlay)
 // ============================================================
 
-function _createAerialOverlay() {
+function _createAerialOverlay(bounds) {
+    var map = AppState.mapInstance;
+
     // Remove existing if any
-    if (PreviewAdjust.aerialOverlayEl && PreviewAdjust.aerialOverlayEl.parentNode) {
-        PreviewAdjust.aerialOverlayEl.parentNode.removeChild(PreviewAdjust.aerialOverlayEl);
+    if (PreviewAdjust.imageOverlay) {
+        map.removeLayer(PreviewAdjust.imageOverlay);
     }
 
-    var img = document.createElement('img');
-    img.className = 'aerial-preview-overlay';
-    img.src = AppState.previewUrl;
-    img.style.opacity = PreviewAdjust.opacity;
-    img.draggable = false;
+    var llBounds = L.latLngBounds(
+        [bounds.south, bounds.west],
+        [bounds.north, bounds.east]
+    );
+    PreviewAdjust.currentBounds = llBounds;
+
+    var overlay = L.imageOverlay(AppState.previewUrl, llBounds, {
+        opacity: PreviewAdjust.opacity,
+        interactive: false,
+        zIndex: 600,
+    }).addTo(map);
+
+    PreviewAdjust.imageOverlay = overlay;
 
     // If the aerial viewer has rotation applied, mirror it on the overlay
-    // so the overlay matches what the user sees in the aerial pane.
     PreviewAdjust.aerialRotation = 0;
     if (AppState.aerialViewer) {
         var osdRot = AppState.aerialViewer.viewport.getRotation();
         if (osdRot !== 0) {
             PreviewAdjust.aerialRotation = osdRot;
-            img.style.transform = 'rotate(' + osdRot + 'deg)';
+            var imgEl = overlay.getElement();
+            if (imgEl) {
+                imgEl.style.transformOrigin = 'center center';
+                imgEl.style.transform = 'rotate(' + osdRot + 'deg)';
+            }
         }
     }
-
-    // Append to the map viewer container so it sits on top of the map
-    var mapViewer = document.getElementById('map-viewer');
-    if (mapViewer) {
-        mapViewer.appendChild(img);
-    }
-
-    PreviewAdjust.aerialOverlayEl = img;
 }
 
 
@@ -241,23 +231,31 @@ function _setMapRotation(degrees) {
 
 
 // ============================================================
-// Nudge helpers (pan the map, inverted so arrows show satellite direction)
+// Nudge helpers — shift the overlay bounds
 // ============================================================
 
 function _getNudgeStep() {
-    /**
-     * Calculate a nudge step in pixels based on current map zoom.
-     * Returns a pixel amount suitable for map.panBy().
-     */
-    return 30; // 30 pixels per nudge press — consistent and intuitive
+    // Returns a geographic offset based on current zoom level
+    // At higher zooms the step is smaller for finer adjustment
+    var map = AppState.mapInstance;
+    var zoom = map.getZoom();
+    // Approximate meters-per-pixel at this zoom, then convert ~30px worth
+    var metersPerPx = 156543.03 * Math.cos(map.getCenter().lat * Math.PI / 180) / Math.pow(2, zoom);
+    var metersStep = metersPerPx * 30;
+    // Convert meters to approximate degrees
+    return metersStep / 111320;
 }
 
-function _nudgeMap(dx, dy) {
-    /**
-     * Pan the map by pixel offsets.
-     * Positive dx = pan right, positive dy = pan down.
-     */
-    AppState.mapInstance.panBy([dx, dy], { animate: false });
+function _nudgeOverlay(dLat, dLng) {
+    if (!PreviewAdjust.currentBounds || !PreviewAdjust.imageOverlay) return;
+
+    var b = PreviewAdjust.currentBounds;
+    var newBounds = L.latLngBounds(
+        [b.getSouth() + dLat, b.getWest() + dLng],
+        [b.getNorth() + dLat, b.getEast() + dLng]
+    );
+    PreviewAdjust.currentBounds = newBounds;
+    PreviewAdjust.imageOverlay.setBounds(newBounds);
 }
 
 
@@ -266,10 +264,6 @@ function _nudgeMap(dx, dy) {
 // ============================================================
 
 function _rotatePoint(px, py, cx, cy, angleDeg) {
-    /**
-     * Rotate point (px, py) around center (cx, cy) by angleDeg degrees.
-     * Returns {x, y}.
-     */
     var rad = angleDeg * Math.PI / 180;
     var cosA = Math.cos(rad);
     var sinA = Math.sin(rad);
@@ -279,6 +273,28 @@ function _rotatePoint(px, py, cx, cy, angleDeg) {
         x: cx + dx * cosA - dy * sinA,
         y: cy + dx * sinA + dy * cosA,
     };
+}
+
+
+// ============================================================
+// Scale helpers — grow/shrink the overlay bounds from center
+// ============================================================
+
+function _scaleOverlay(factor) {
+    if (!PreviewAdjust.currentBounds || !PreviewAdjust.imageOverlay) return;
+
+    var b = PreviewAdjust.currentBounds;
+    var centerLat = (b.getNorth() + b.getSouth()) / 2;
+    var centerLng = (b.getEast() + b.getWest()) / 2;
+    var halfLat = (b.getNorth() - b.getSouth()) / 2 * factor;
+    var halfLng = (b.getEast() - b.getWest()) / 2 * factor;
+
+    var newBounds = L.latLngBounds(
+        [centerLat - halfLat, centerLng - halfLng],
+        [centerLat + halfLat, centerLng + halfLng]
+    );
+    PreviewAdjust.currentBounds = newBounds;
+    PreviewAdjust.imageOverlay.setBounds(newBounds);
 }
 
 
@@ -310,15 +326,15 @@ function _showAdjustPanel() {
 
 
 function _bindAdjustControls() {
-    // --- Opacity slider → aerial overlay transparency ---
+    // --- Opacity slider → image overlay transparency ---
     var opacitySlider = document.getElementById('adjustOpacity');
     var opacityVal = document.getElementById('adjustOpacityVal');
     if (opacitySlider) {
         opacitySlider.oninput = function () {
             var val = parseInt(this.value) / 100;
             PreviewAdjust.opacity = val;
-            if (PreviewAdjust.aerialOverlayEl) {
-                PreviewAdjust.aerialOverlayEl.style.opacity = val;
+            if (PreviewAdjust.imageOverlay) {
+                PreviewAdjust.imageOverlay.setOpacity(val);
             }
             if (opacityVal) opacityVal.textContent = this.value + '%';
         };
@@ -334,28 +350,25 @@ function _bindAdjustControls() {
         };
     }
 
-    // --- Nudge buttons (arrows show satellite movement direction) ---
-    // ↑ = satellite moves up = map pans down (positive panBy Y)
+    // --- Nudge buttons — shift the aerial overlay, not the map ---
     var nudgeN = document.getElementById('nudgeN');
     var nudgeS = document.getElementById('nudgeS');
     var nudgeE = document.getElementById('nudgeE');
     var nudgeW = document.getElementById('nudgeW');
-    var step = _getNudgeStep;
 
-    // panBy([dx, dy]): positive dy shifts viewport down → content/satellite moves UP
-    if (nudgeN) nudgeN.onclick = function () { _nudgeMap(0, step()); };
-    if (nudgeS) nudgeS.onclick = function () { _nudgeMap(0, -step()); };
-    if (nudgeE) nudgeE.onclick = function () { _nudgeMap(-step(), 0); };
-    if (nudgeW) nudgeW.onclick = function () { _nudgeMap(step(), 0); };
+    if (nudgeN) nudgeN.onclick = function () { _nudgeOverlay(_getNudgeStep(), 0); };
+    if (nudgeS) nudgeS.onclick = function () { _nudgeOverlay(-_getNudgeStep(), 0); };
+    if (nudgeE) nudgeE.onclick = function () { _nudgeOverlay(0, _getNudgeStep()); };
+    if (nudgeW) nudgeW.onclick = function () { _nudgeOverlay(0, -_getNudgeStep()); };
 
-    // --- Scale (zoom) buttons ---
+    // --- Scale (zoom) buttons — scale the overlay, not the map ---
     var scaleUp = document.getElementById('scaleUp');
     var scaleDn = document.getElementById('scaleDn');
 
-    if (scaleUp) scaleUp.onclick = function () { AppState.mapInstance.zoomIn(0.5); };
-    if (scaleDn) scaleDn.onclick = function () { AppState.mapInstance.zoomOut(0.5); };
+    if (scaleUp) scaleUp.onclick = function () { _scaleOverlay(1.02); };
+    if (scaleDn) scaleDn.onclick = function () { _scaleOverlay(0.98); };
 
-    // --- Reset button → restore original map view ---
+    // --- Reset button → restore original overlay bounds and map view ---
     var resetBtn = document.getElementById('adjustReset');
     if (resetBtn) {
         resetBtn.onclick = function () {
@@ -365,6 +378,19 @@ function _bindAdjustControls() {
             var rotInput2 = document.getElementById('adjustRotation');
             if (rotInput2) rotInput2.value = 0;
 
+            // Restore overlay to original bounds
+            if (PreviewAdjust.originalBounds) {
+                var ob = PreviewAdjust.originalBounds;
+                var llBounds = L.latLngBounds(
+                    [ob.south, ob.west],
+                    [ob.north, ob.east]
+                );
+                PreviewAdjust.currentBounds = llBounds;
+                if (PreviewAdjust.imageOverlay) {
+                    PreviewAdjust.imageOverlay.setBounds(llBounds);
+                }
+            }
+
             // Restore original map view
             if (PreviewAdjust.originalCenter && PreviewAdjust.originalZoom !== null) {
                 AppState.mapInstance.setView(
@@ -373,10 +399,10 @@ function _bindAdjustControls() {
                     { animate: true }
                 );
             } else if (PreviewAdjust.originalBounds) {
-                var ob = PreviewAdjust.originalBounds;
+                var ob2 = PreviewAdjust.originalBounds;
                 AppState.mapInstance.fitBounds(
-                    L.latLngBounds([ob.south, ob.west], [ob.north, ob.east]),
-                    { padding: [40, 40] }
+                    L.latLngBounds([ob2.south, ob2.west], [ob2.north, ob2.east]),
+                    { padding: [60, 60] }
                 );
             }
         };
@@ -405,9 +431,6 @@ function _bindAdjustControls() {
 // ============================================================
 
 function downloadKmzWithAdjustments() {
-    /**
-     * Export KMZ with the user's adjusted bounds and rotation.
-     */
     var adjustedBounds = getAdjustedBounds();
     var rotation = getAdjustedRotation();
 

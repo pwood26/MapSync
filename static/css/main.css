@@ -44,7 +44,7 @@ body {
 }
 
 .login-logo-img {
-    height: 72px;
+    height: 48px;
     width: auto;
 }
 
@@ -1182,14 +1182,7 @@ body {
     font-style: normal;
 }
 
-/* Aerial photo overlay on top of the map for Preview & Adjust */
-.aerial-preview-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    pointer-events: none;
+/* Leaflet image overlay z-index boost for Preview & Adjust */
+.leaflet-image-layer {
     z-index: 600;
 }
