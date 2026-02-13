@@ -82,7 +82,7 @@ function showResultsModal(result) {
         '  </p>' +
         '  <div class="actions">' +
         '    <button class="btn-secondary" id="resultsClose">Close</button>' +
-        '    <button class="btn-adjust" id="resultsPreview">Preview & Adjust</button>' +
+        '    <button class="btn-adjust" id="resultsPreview">Preview</button>' +
         '    <button class="btn-primary" id="resultsDownload">Download KMZ</button>' +
         '  </div>' +
         '</div>';
@@ -98,7 +98,7 @@ function showResultsModal(result) {
         // Show the georeferenced image on the map for adjustment
         if (result.bounds) {
             showPreviewOverlay(AppState.imageId, result.bounds);
-            updateGcpStatus('Preview & Adjust: drag the image or use controls to fine-tune, then click Accept to export.');
+            updateGcpStatus('Preview: use opacity slider to compare alignment, then Export KMZ or Edit GCPs.');
         } else {
             alert('No bounds available from georeferencing.');
         }

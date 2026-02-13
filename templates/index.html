@@ -118,10 +118,10 @@
                 <div id="overlayList" class="overlay-list"></div>
             </div>
 
-            <!-- Preview & Adjust panel (floats over map) -->
+            <!-- Preview panel (floats over map, view-only) -->
             <div id="adjustPanel" class="adjust-panel" style="display: none;">
                 <div class="adjust-panel-title">
-                    <span>Preview &amp; Adjust</span>
+                    <span>Preview</span>
                 </div>
 
                 <!-- Opacity -->
@@ -133,51 +133,16 @@
                     </div>
                 </div>
 
-                <!-- Nudge D-pad -->
-                <div class="adjust-section">
-                    <span class="adjust-section-label">Nudge Photo</span>
-                    <div class="nudge-pad">
-                        <div></div>
-                        <button id="nudgeN" title="Move photo north">&#9650;</button>
-                        <div></div>
-                        <button id="nudgeW" title="Move photo west">&#9664;</button>
-                        <button class="nudge-center" disabled>+</button>
-                        <button id="nudgeE" title="Move photo east">&#9654;</button>
-                        <div></div>
-                        <button id="nudgeS" title="Move photo south">&#9660;</button>
-                        <div></div>
-                    </div>
-                </div>
-
-                <!-- Scale -->
-                <div class="adjust-section">
-                    <span class="adjust-section-label">Scale Photo</span>
-                    <div class="scale-controls">
-                        <button id="scaleDn" title="Shrink photo">&#8722; Shrink</button>
-                        <button id="scaleUp" title="Grow photo">&#43; Grow</button>
-                    </div>
-                </div>
-
-                <!-- Rotation -->
-                <div class="adjust-section">
-                    <span class="adjust-section-label">Rotate Map</span>
-                    <div class="adjust-rotation-row">
-                        <input type="number" id="adjustRotation" min="-180" max="180" value="0" step="0.5">
-                        <span class="adjust-rotation-unit">degrees</span>
-                    </div>
-                </div>
-
                 <!-- Hint -->
                 <div class="adjust-hint">
-                    Use the controls to nudge and scale the aerial photo overlay.<br>
-                    Zoom the map with scroll wheel to compare details.
+                    Slide opacity to compare alignment. Scroll to zoom, drag to pan.<br>
+                    If alignment is off, go back and adjust your GCPs.
                 </div>
 
                 <!-- Actions -->
                 <div class="adjust-actions">
-                    <button id="adjustCancel" class="adjust-btn-cancel">Cancel</button>
-                    <button id="adjustReset" class="adjust-btn-reset">Reset</button>
-                    <button id="adjustAccept" class="adjust-btn-accept">Accept &amp; Export</button>
+                    <button id="adjustCancel" class="adjust-btn-cancel">Edit GCPs</button>
+                    <button id="adjustAccept" class="adjust-btn-accept">Export KMZ</button>
                 </div>
             </div>
         </div>
