@@ -1,4 +1,6 @@
 import os
+import time
+import threading
 import uuid
 from flask import Flask, render_template, request, jsonify, send_file
 
@@ -302,7 +304,7 @@ def preview_overlay(image_id):
     if not os.path.exists(preview_jpg):
         try:
             from PIL import Image as PILImage
-            PILImage.MAX_IMAGE_PIXELS = 500_000_000
+            import processing.config  # noqa: F401 — sets Image.MAX_IMAGE_PIXELS
             img = PILImage.open(georef_path)
             if img.mode == 'RGBA':
                 # Keep transparency by converting to PNG instead
@@ -361,6 +363,46 @@ def download(filename):
     if not os.path.exists(filepath):
         return jsonify({'error': 'File not found'}), 404
     return send_file(filepath, as_attachment=True, download_name=filename)
+
+
+# --- File cleanup: delete files older than 1 hour ---
+
+CLEANUP_MAX_AGE = 3600  # seconds
+CLEANUP_INTERVAL = 600  # run every 10 minutes
+
+
+def _cleanup_old_files():
+    """Delete files older than CLEANUP_MAX_AGE from temp directories."""
+    now = time.time()
+    cleaned = 0
+    for folder in [UPLOAD_FOLDER, PREVIEW_FOLDER, EXPORT_FOLDER, OVERLAY_FOLDER]:
+        if not os.path.isdir(folder):
+            continue
+        for name in os.listdir(folder):
+            path = os.path.join(folder, name)
+            try:
+                if os.path.isfile(path) and (now - os.path.getmtime(path)) > CLEANUP_MAX_AGE:
+                    os.remove(path)
+                    cleaned += 1
+            except OSError:
+                pass
+    if cleaned:
+        print(f'[cleanup] Removed {cleaned} file(s) older than {CLEANUP_MAX_AGE // 60} minutes')
+
+
+def _cleanup_loop():
+    """Background thread that periodically cleans old files."""
+    while True:
+        time.sleep(CLEANUP_INTERVAL)
+        try:
+            _cleanup_old_files()
+        except Exception as e:
+            print(f'[cleanup] Error: {e}')
+
+
+# Start cleanup thread (daemon so it dies with the main process)
+_cleanup_thread = threading.Thread(target=_cleanup_loop, daemon=True)
+_cleanup_thread.start()
 
 
 if __name__ == '__main__':

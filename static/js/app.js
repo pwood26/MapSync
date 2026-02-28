@@ -46,6 +46,12 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
+function _formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
 function handleFileUpload(e) {
     var file = e.target.files[0];
     if (!file) return;
@@ -53,66 +59,94 @@ function handleFileUpload(e) {
     var formData = new FormData();
     formData.append('file', file);
 
-    showLoading('Uploading and processing TIFF...');
+    var sizeLabel = _formatFileSize(file.size);
+    showLoading('Uploading ' + sizeLabel + '...');
 
-    fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-    })
-        .then(function (resp) {
-            if (!resp.ok) {
-                return resp.text().then(function (text) {
-                    try {
-                        var d = JSON.parse(text);
-                        throw new Error(d.error || 'Upload failed');
-                    } catch (e) {
-                        if (e instanceof SyntaxError) {
-                            throw new Error('Server error (' + resp.status + '). Check server logs.');
-                        }
-                        throw e;
-                    }
-                });
+    // Show progress bar
+    var progressWrap = document.getElementById('uploadProgressWrap');
+    var progressFill = document.getElementById('uploadProgressFill');
+    var progressLabel = document.getElementById('uploadProgressLabel');
+    if (progressWrap) progressWrap.style.display = 'block';
+    if (progressFill) progressFill.style.width = '0%';
+    if (progressLabel) progressLabel.textContent = '0% of ' + sizeLabel;
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload');
+
+    xhr.upload.addEventListener('progress', function (ev) {
+        if (ev.lengthComputable) {
+            var pct = Math.round((ev.loaded / ev.total) * 100);
+            if (progressFill) progressFill.style.width = pct + '%';
+            if (progressLabel) progressLabel.textContent = pct + '% of ' + sizeLabel;
+            if (pct >= 100) {
+                var loadingText = document.getElementById('loadingText');
+                if (loadingText) loadingText.textContent = 'Processing image...';
             }
-            return resp.json();
-        })
-        .then(function (data) {
-            AppState.imageId = data.image_id;
-            AppState.previewUrl = data.preview_url;
-            AppState.originalWidth = data.original_width;
-            AppState.originalHeight = data.original_height;
-            AppState.previewWidth = data.preview_width;
-            AppState.previewHeight = data.preview_height;
-            AppState.scaleFactor = data.scale_factor;
-            AppState.metadata = data.metadata;
-            AppState.gcps = [];
-            AppState.isGeoreferenced = false;
+        }
+    });
 
-            // Clear any existing GCP data
-            clearAllGcps();
+    xhr.addEventListener('load', function () {
+        if (progressWrap) progressWrap.style.display = 'none';
 
-            // Initialize the aerial viewer
-            var placeholder = document.getElementById('aerialPlaceholder');
-            if (placeholder) placeholder.style.display = 'none';
-            AppState.aerialViewer = initAerialViewer('aerial-viewer', data.preview_url);
-
-            // Enable the Add GCP button
-            var addGcpEl = document.getElementById('addGcpBtn');
-            var rotCtrl = document.getElementById('rotationControls');
-            if (addGcpEl) addGcpEl.disabled = false;
-            if (rotCtrl) rotCtrl.style.display = 'flex';
-
-            // Display metadata info if available
-            displayMetadataInfo(data.metadata);
-
-            updateGcpStatus('Click "Add GCP" to start placing control points');
-            updateExportButton();
-
+        if (xhr.status < 200 || xhr.status >= 300) {
             hideLoading();
-        })
-        .catch(function (err) {
+            try {
+                var d = JSON.parse(xhr.responseText);
+                alert('Upload failed: ' + (d.error || 'Unknown error'));
+            } catch (_e) {
+                alert('Upload failed: Server error (' + xhr.status + ')');
+            }
+            return;
+        }
+
+        var data;
+        try { data = JSON.parse(xhr.responseText); } catch (_e) {
             hideLoading();
-            alert('Upload failed: ' + err.message);
-        });
+            alert('Upload failed: Invalid response from server');
+            return;
+        }
+
+        AppState.imageId = data.image_id;
+        AppState.previewUrl = data.preview_url;
+        AppState.originalWidth = data.original_width;
+        AppState.originalHeight = data.original_height;
+        AppState.previewWidth = data.preview_width;
+        AppState.previewHeight = data.preview_height;
+        AppState.scaleFactor = data.scale_factor;
+        AppState.metadata = data.metadata;
+        AppState.gcps = [];
+        AppState.isGeoreferenced = false;
+
+        // Clear any existing GCP data
+        clearAllGcps();
+
+        // Initialize the aerial viewer
+        var placeholder = document.getElementById('aerialPlaceholder');
+        if (placeholder) placeholder.style.display = 'none';
+        AppState.aerialViewer = initAerialViewer('aerial-viewer', data.preview_url);
+
+        // Enable the Add GCP button
+        var addGcpEl = document.getElementById('addGcpBtn');
+        var rotCtrl = document.getElementById('rotationControls');
+        if (addGcpEl) addGcpEl.disabled = false;
+        if (rotCtrl) rotCtrl.style.display = 'flex';
+
+        // Display metadata info if available
+        displayMetadataInfo(data.metadata);
+
+        updateGcpStatus('Click "Add GCP" to start placing control points');
+        updateExportButton();
+
+        hideLoading();
+    });
+
+    xhr.addEventListener('error', function () {
+        if (progressWrap) progressWrap.style.display = 'none';
+        hideLoading();
+        alert('Upload failed: Network error');
+    });
+
+    xhr.send(formData);
 
     // Reset file input so the same file can be re-uploaded
     e.target.value = '';

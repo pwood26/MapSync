@@ -4,8 +4,7 @@ import json
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 
-# Allow very large images (USGS aerials can be 100+ megapixels)
-Image.MAX_IMAGE_PIXELS = 500_000_000
+import processing.config  # noqa: F401 — sets Image.MAX_IMAGE_PIXELS
 
 PREVIEW_MAX_DIM = 4096
 

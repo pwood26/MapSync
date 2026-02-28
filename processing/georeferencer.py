@@ -1,6 +1,8 @@
 """MapSync - Pure Python georeferencing pipeline.
 
 Uses numpy least-squares affine fitting + OpenCV warp instead of GDAL.
+For 10+ GCPs, uses scipy thin-plate spline (TPS) for better accuracy
+with lens distortion and oblique angles.
 No external command-line dependencies required.
 """
 
@@ -12,16 +14,22 @@ import cv2
 import numpy as np
 from PIL import Image
 
-# Allow large USGS aerial frames
-Image.MAX_IMAGE_PIXELS = 500_000_000
+import processing.config  # noqa: F401 — sets Image.MAX_IMAGE_PIXELS
+
+try:
+    from scipy.interpolate import RBFInterpolator
+    _HAS_SCIPY = True
+except ImportError:
+    _HAS_SCIPY = False
+
+TPS_MIN_GCPS = 10  # use TPS when this many GCPs are available
 
 
 def run_georeferencing(input_tiff, output_tiff, gcps):
-    """Run georeferencing pipeline using affine transformation.
+    """Run georeferencing pipeline.
 
-    Fits an affine transform from pixel coordinates to geographic
-    coordinates using the provided GCPs, warps the image to an
-    axis-aligned geographic rectangle, and saves the result.
+    Automatically selects thin-plate spline (TPS) when >= 10 GCPs are
+    provided, otherwise uses affine (6-parameter least-squares).
 
     Args:
         input_tiff: Path to the original TIFF file.
@@ -30,65 +38,62 @@ def run_georeferencing(input_tiff, output_tiff, gcps):
 
     Returns:
         Dict with 'success', 'residuals', 'rms_error', 'bounds',
-        or 'error'.
+        'transform_type', or 'error'.
     """
     if len(gcps) < 5:
         return {'error': 'At least 5 GCPs are required for georeferencing.'}
 
-    try:
-        # Step 1: Compute affine transform from GCPs
-        affine = _compute_affine(gcps)
-        if affine is None:
-            return {'error': 'Could not compute affine transform from GCPs.'}
+    use_tps = len(gcps) >= TPS_MIN_GCPS and _HAS_SCIPY
 
-        # Step 2: Compute geographic bounds of the warped image
+    try:
         img = Image.open(input_tiff)
         orig_w, orig_h = img.size
         img.close()
 
-        bounds = _compute_bounds(orig_w, orig_h, affine)
-        if bounds is None:
-            return {'error': 'Could not compute geographic bounds.'}
+        if use_tps:
+            result = _run_tps(input_tiff, output_tiff, gcps, orig_w, orig_h)
+        else:
+            result = _run_affine(input_tiff, output_tiff, gcps, orig_w, orig_h)
 
-        # Step 3: Warp the image
-        _warp_image(input_tiff, output_tiff, affine, bounds)
-
-        # Step 4: Save bounds as sidecar JSON for the exporter
-        bounds_path = output_tiff.replace('.tiff', '_bounds.json').replace('.tif', '_bounds.json')
-        with open(bounds_path, 'w') as f:
-            json.dump(bounds, f)
-
-        # Step 5: Compute residuals
-        residuals = _compute_residuals(affine, gcps)
-
-        print(f'[georeferencer] Affine georeferencing complete: '
-              f'RMS={residuals["rms"]:.1f}m, '
-              f'bounds=N{bounds["north"]:.4f} S{bounds["south"]:.4f} '
-              f'E{bounds["east"]:.4f} W{bounds["west"]:.4f}')
-
-        return {
-            'success': True,
-            'residuals': residuals['per_point'],
-            'rms_error': residuals['rms'],
-            'bounds': bounds,
-        }
+        return result
 
     except Exception as e:
         return {'error': f'Georeferencing failed: {e}'}
 
 
+# ─── Affine pipeline ───────────────────────────────────────────────
+
+def _run_affine(input_tiff, output_tiff, gcps, orig_w, orig_h):
+    affine = _compute_affine(gcps)
+    if affine is None:
+        return {'error': 'Could not compute affine transform from GCPs.'}
+
+    bounds = _compute_bounds_affine(orig_w, orig_h, affine)
+    if bounds is None:
+        return {'error': 'Could not compute geographic bounds.'}
+
+    _warp_image_affine(input_tiff, output_tiff, affine, bounds)
+    _save_bounds(output_tiff, bounds)
+
+    residuals = _compute_residuals_affine(affine, gcps)
+
+    print(f'[georeferencer] Affine georeferencing complete: '
+          f'RMS={residuals["rms"]:.1f}m, '
+          f'bounds=N{bounds["north"]:.4f} S{bounds["south"]:.4f} '
+          f'E{bounds["east"]:.4f} W{bounds["west"]:.4f}')
+
+    return {
+        'success': True,
+        'residuals': residuals['per_point'],
+        'rms_error': residuals['rms'],
+        'bounds': bounds,
+        'transform_type': 'affine',
+    }
+
+
 def _compute_affine(gcps):
-    """Fit a 6-parameter affine transform: pixel (x,y) → geographic (lon,lat).
-
-    Solves the least-squares system:
-        lon = a0 + a1*px + a2*py
-        lat = b0 + b1*px + b2*py
-
-    Returns dict with 'lon_coeffs' [a0, a1, a2] and 'lat_coeffs' [b0, b1, b2],
-    or None if the system is singular.
-    """
+    """Fit a 6-parameter affine transform: pixel (x,y) -> geographic (lon,lat)."""
     n = len(gcps)
-    # Build the design matrix: [1, pixel_x, pixel_y]
     A = np.zeros((n, 3))
     lon_vec = np.zeros(n)
     lat_vec = np.zeros(n)
@@ -105,13 +110,12 @@ def _compute_affine(gcps):
         return None
 
     return {
-        'lon_coeffs': lon_coeffs.tolist(),  # [a0, a1, a2]
-        'lat_coeffs': lat_coeffs.tolist(),  # [b0, b1, b2]
+        'lon_coeffs': lon_coeffs.tolist(),
+        'lat_coeffs': lat_coeffs.tolist(),
     }
 
 
-def _pixel_to_geo(px, py, affine):
-    """Convert pixel coordinates to geographic coordinates using affine."""
+def _pixel_to_geo_affine(px, py, affine):
     a0, a1, a2 = affine['lon_coeffs']
     b0, b1, b2 = affine['lat_coeffs']
     lon = a0 + a1 * px + a2 * py
@@ -119,40 +123,20 @@ def _pixel_to_geo(px, py, affine):
     return lon, lat
 
 
-def _compute_bounds(width, height, affine):
-    """Compute geographic bounding box of the image after affine transform.
-
-    Transforms all four corners and takes the min/max lat/lon.
-    """
-    corners_px = [
-        (0, 0),               # top-left
-        (width, 0),           # top-right
-        (width, height),      # bottom-right
-        (0, height),          # bottom-left
-    ]
-
-    lons = []
-    lats = []
+def _compute_bounds_affine(width, height, affine):
+    corners_px = [(0, 0), (width, 0), (width, height), (0, height)]
+    lons, lats = [], []
     for px, py in corners_px:
-        lon, lat = _pixel_to_geo(px, py, affine)
+        lon, lat = _pixel_to_geo_affine(px, py, affine)
         lons.append(lon)
         lats.append(lat)
-
     return {
-        'north': max(lats),
-        'south': min(lats),
-        'east': max(lons),
-        'west': min(lons),
+        'north': max(lats), 'south': min(lats),
+        'east': max(lons), 'west': min(lons),
     }
 
 
-def _warp_image(input_tiff, output_tiff, affine, bounds):
-    """Warp the image to an axis-aligned geographic rectangle.
-
-    The output image covers the bounding box, with each pixel
-    mapped back to the source image via the inverse affine transform.
-    """
-    # Load source image
+def _warp_image_affine(input_tiff, output_tiff, affine, bounds):
     src_img = Image.open(input_tiff)
     if src_img.mode not in ('RGB', 'RGBA'):
         try:
@@ -160,129 +144,190 @@ def _warp_image(input_tiff, output_tiff, affine, bounds):
         except Exception:
             src_img = src_img.convert('L').convert('RGB')
 
-    src_w, src_h = src_img.size
     src_arr = np.array(src_img)
 
-    # Determine output dimensions
-    # Use similar pixel density as the input (preserve resolution roughly)
-    a1 = affine['lon_coeffs'][1]  # degrees per pixel in x
-    a2 = affine['lon_coeffs'][2]  # degrees per pixel in y
+    a1 = affine['lon_coeffs'][1]
     b1 = affine['lat_coeffs'][1]
-    b2 = affine['lat_coeffs'][2]
-
-    # Approximate pixel size in degrees
     px_size_deg = math.sqrt(a1**2 + b1**2)
     if px_size_deg == 0:
-        px_size_deg = 1e-6  # guard against zero
+        px_size_deg = 1e-6
 
     lon_span = bounds['east'] - bounds['west']
     lat_span = bounds['north'] - bounds['south']
-
     out_w = max(100, min(8000, int(lon_span / px_size_deg)))
     out_h = max(100, min(8000, int(lat_span / px_size_deg)))
 
-    # Build inverse mapping: for each output pixel, find source pixel
-    # Output pixel (ox, oy) maps to geographic:
-    #   lon = west + ox * (lon_span / out_w)
-    #   lat = north - oy * (lat_span / out_h)  # Y flipped: top=north
-    #
-    # Then invert the affine to get source pixel:
-    #   [1, px, py] → [lon, lat]  means  A * [1, px, py]^T = [lon, lat]^T
-    #   We need to invert: given lon, lat, find px, py
-
-    # Forward affine matrix (2x3):
-    # [lon] = [a0 + a1*px + a2*py]
-    # [lat] = [b0 + b1*px + b2*py]
-    #
-    # In matrix form: [lon - a0] = [[a1, a2]] * [px]
-    #                 [lat - b0]   [[b1, b2]]   [py]
-
     a0 = affine['lon_coeffs'][0]
+    a2 = affine['lon_coeffs'][2]
     b0 = affine['lat_coeffs'][0]
+    b2 = affine['lat_coeffs'][2]
 
-    M_fwd = np.array([
-        [a1, a2],
-        [b1, b2],
-    ])
-
+    M_fwd = np.array([[a1, a2], [b1, b2]])
     try:
         M_inv = np.linalg.inv(M_fwd)
     except np.linalg.LinAlgError:
-        # Singular matrix — fallback: just save the original image
         src_img.save(output_tiff, 'TIFF')
         return
 
-    # Build coordinate grids for the output image
-    ox = np.arange(out_w)
-    oy = np.arange(out_h)
-    ox_grid, oy_grid = np.meshgrid(ox, oy)
-
-    # Output pixel → geographic coordinates
+    ox_grid, oy_grid = np.meshgrid(np.arange(out_w), np.arange(out_h))
     lon_grid = bounds['west'] + ox_grid * (lon_span / out_w)
     lat_grid = bounds['north'] - oy_grid * (lat_span / out_h)
 
-    # Geographic → source pixel (using inverse affine)
     dlon = lon_grid - a0
     dlat = lat_grid - b0
+    map_x = (M_inv[0, 0] * dlon + M_inv[0, 1] * dlat).astype(np.float32)
+    map_y = (M_inv[1, 0] * dlon + M_inv[1, 1] * dlat).astype(np.float32)
 
-    src_px_x = M_inv[0, 0] * dlon + M_inv[0, 1] * dlat
-    src_px_y = M_inv[1, 0] * dlon + M_inv[1, 1] * dlat
+    warped = cv2.remap(src_arr, map_x, map_y,
+                       interpolation=cv2.INTER_LINEAR,
+                       borderMode=cv2.BORDER_CONSTANT,
+                       borderValue=(0, 0, 0))
 
-    # Remap using OpenCV (float32 maps)
-    map_x = src_px_x.astype(np.float32)
-    map_y = src_px_y.astype(np.float32)
-
-    warped = cv2.remap(
-        src_arr, map_x, map_y,
-        interpolation=cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=(0, 0, 0),
-    )
-
-    # Save output
-    out_img = Image.fromarray(warped)
-    out_img.save(output_tiff, 'TIFF', compression='tiff_lzw')
+    Image.fromarray(warped).save(output_tiff, 'TIFF', compression='tiff_lzw')
 
 
-def _compute_residuals(affine, gcps):
-    """Compute residual errors for each GCP.
-
-    For each GCP, predicts the geographic coordinate from its pixel
-    position using the affine transform, then computes the Haversine
-    distance to the actual GCP coordinate.
-    """
+def _compute_residuals_affine(affine, gcps):
     per_point = []
     sum_sq = 0
-
     for gcp in gcps:
-        pred_lon, pred_lat = _pixel_to_geo(
-            gcp['pixel_x'], gcp['pixel_y'], affine
-        )
+        pred_lon, pred_lat = _pixel_to_geo_affine(gcp['pixel_x'], gcp['pixel_y'], affine)
         error_m = haversine(gcp['lat'], gcp['lon'], pred_lat, pred_lon)
         per_point.append({
             'gcp_id': gcp.get('id', len(per_point) + 1),
             'error_m': round(error_m, 1),
         })
         sum_sq += error_m ** 2
-
     rms = math.sqrt(sum_sq / len(gcps)) if gcps else 0
+    return {'per_point': per_point, 'rms': round(rms, 1)}
+
+
+# ─── TPS (thin-plate spline) pipeline ──────────────────────────────
+
+def _run_tps(input_tiff, output_tiff, gcps, orig_w, orig_h):
+    # Build forward (pixel → geo) and inverse (geo → pixel) interpolators
+    px_coords = np.array([[g['pixel_x'], g['pixel_y']] for g in gcps])
+    geo_coords = np.array([[g['lon'], g['lat']] for g in gcps])
+
+    # Forward: pixel → geo (for bounds computation and residuals)
+    fwd_lon = RBFInterpolator(px_coords, geo_coords[:, 0], kernel='thin_plate_spline')
+    fwd_lat = RBFInterpolator(px_coords, geo_coords[:, 1], kernel='thin_plate_spline')
+
+    # Inverse: geo → pixel (for image warping)
+    inv_px = RBFInterpolator(geo_coords, px_coords[:, 0], kernel='thin_plate_spline')
+    inv_py = RBFInterpolator(geo_coords, px_coords[:, 1], kernel='thin_plate_spline')
+
+    tps = {
+        'fwd_lon': fwd_lon, 'fwd_lat': fwd_lat,
+        'inv_px': inv_px, 'inv_py': inv_py,
+    }
+
+    # Compute bounds from image corners + edge midpoints for better coverage
+    sample_pts = [
+        (0, 0), (orig_w, 0), (orig_w, orig_h), (0, orig_h),
+        (orig_w / 2, 0), (orig_w, orig_h / 2),
+        (orig_w / 2, orig_h), (0, orig_h / 2),
+    ]
+    pts = np.array(sample_pts)
+    lons = fwd_lon(pts)
+    lats = fwd_lat(pts)
+    bounds = {
+        'north': float(np.max(lats)), 'south': float(np.min(lats)),
+        'east': float(np.max(lons)), 'west': float(np.min(lons)),
+    }
+
+    # Estimate pixel size from affine (for output dimensions)
+    affine = _compute_affine(gcps)
+    a1 = affine['lon_coeffs'][1] if affine else 1e-6
+    b1 = affine['lat_coeffs'][1] if affine else 1e-6
+    px_size_deg = math.sqrt(a1**2 + b1**2)
+    if px_size_deg == 0:
+        px_size_deg = 1e-6
+
+    _warp_image_tps(input_tiff, output_tiff, tps, bounds, px_size_deg)
+    _save_bounds(output_tiff, bounds)
+
+    residuals = _compute_residuals_tps(tps, gcps)
+
+    print(f'[georeferencer] TPS georeferencing complete ({len(gcps)} GCPs): '
+          f'RMS={residuals["rms"]:.1f}m, '
+          f'bounds=N{bounds["north"]:.4f} S{bounds["south"]:.4f} '
+          f'E{bounds["east"]:.4f} W{bounds["west"]:.4f}')
 
     return {
-        'per_point': per_point,
-        'rms': round(rms, 1),
+        'success': True,
+        'residuals': residuals['per_point'],
+        'rms_error': residuals['rms'],
+        'bounds': bounds,
+        'transform_type': 'tps',
     }
+
+
+def _warp_image_tps(input_tiff, output_tiff, tps, bounds, px_size_deg):
+    src_img = Image.open(input_tiff)
+    if src_img.mode not in ('RGB', 'RGBA'):
+        try:
+            src_img = src_img.convert('RGB')
+        except Exception:
+            src_img = src_img.convert('L').convert('RGB')
+
+    src_arr = np.array(src_img)
+
+    lon_span = bounds['east'] - bounds['west']
+    lat_span = bounds['north'] - bounds['south']
+    out_w = max(100, min(8000, int(lon_span / px_size_deg)))
+    out_h = max(100, min(8000, int(lat_span / px_size_deg)))
+
+    ox_grid, oy_grid = np.meshgrid(np.arange(out_w), np.arange(out_h))
+    lon_grid = bounds['west'] + ox_grid * (lon_span / out_w)
+    lat_grid = bounds['north'] - oy_grid * (lat_span / out_h)
+
+    # Flatten for RBF evaluation, then reshape
+    geo_flat = np.column_stack([lon_grid.ravel(), lat_grid.ravel()])
+    src_x = tps['inv_px'](geo_flat).reshape(out_h, out_w).astype(np.float32)
+    src_y = tps['inv_py'](geo_flat).reshape(out_h, out_w).astype(np.float32)
+
+    warped = cv2.remap(src_arr, src_x, src_y,
+                       interpolation=cv2.INTER_LINEAR,
+                       borderMode=cv2.BORDER_CONSTANT,
+                       borderValue=(0, 0, 0))
+
+    Image.fromarray(warped).save(output_tiff, 'TIFF', compression='tiff_lzw')
+
+
+def _compute_residuals_tps(tps, gcps):
+    per_point = []
+    sum_sq = 0
+    px_coords = np.array([[g['pixel_x'], g['pixel_y']] for g in gcps])
+    pred_lons = tps['fwd_lon'](px_coords)
+    pred_lats = tps['fwd_lat'](px_coords)
+
+    for i, gcp in enumerate(gcps):
+        error_m = haversine(gcp['lat'], gcp['lon'], float(pred_lats[i]), float(pred_lons[i]))
+        per_point.append({
+            'gcp_id': gcp.get('id', i + 1),
+            'error_m': round(error_m, 1),
+        })
+        sum_sq += error_m ** 2
+
+    rms = math.sqrt(sum_sq / len(gcps)) if gcps else 0
+    return {'per_point': per_point, 'rms': round(rms, 1)}
+
+
+# ─── Shared helpers ─────────────────────────────────────────────────
+
+def _save_bounds(output_tiff, bounds):
+    bounds_path = output_tiff.replace('.tiff', '_bounds.json').replace('.tif', '_bounds.json')
+    with open(bounds_path, 'w') as f:
+        json.dump(bounds, f)
 
 
 def haversine(lat1, lon1, lat2, lon2):
     """Compute the great-circle distance between two points in meters."""
-    R = 6371000  # Earth radius in meters
+    R = 6371000
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
     dlam = math.radians(lon2 - lon1)
-
-    a = (
-        math.sin(dphi / 2) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
-    )
+    a = (math.sin(dphi / 2) ** 2
+         + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2)
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))

@@ -13,8 +13,7 @@ import zipfile
 import numpy as np
 from PIL import Image
 
-# Allow large images
-Image.MAX_IMAGE_PIXELS = 500_000_000
+import processing.config  # noqa: F401 — sets Image.MAX_IMAGE_PIXELS
 
 
 def generate_kmz(georef_tiff, kmz_path, rotation=0):
